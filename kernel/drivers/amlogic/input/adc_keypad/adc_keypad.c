@@ -74,6 +74,11 @@ static int kp_search_key(struct kp *kp)
 		if (value < 0) {
 			continue;
 		}
+
+		if (value < 1023) {
+		printk("key %d voltage detected.\n", value);
+		}
+
 	 	 for (j=0; j<kp->key_num; j++) {
 			if ((key->chan == kp->chan[i])
 			&& (value >= key->value - key->tolerance)
