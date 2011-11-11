@@ -1,7 +1,7 @@
-/* This file is auto generated, version 15 */
+/* This file is auto generated, version 6 */
 #define UTS_MACHINE "arm"
-#define UTS_VERSION "Kyorakernel #15 Sun Nov 6 01:23:59 PST 2011"
-#define LINUX_COMPILE_TIME "01:23:59"
+#define UTS_VERSION "#6 Thu Nov 10 20:32:02 PST 2011"
+#define LINUX_COMPILE_TIME "20:32:02"
 #define LINUX_COMPILE_BY "root"
 #define LINUX_COMPILE_HOST "hillbeast-ubuntu"
 #define LINUX_COMPILE_DOMAIN

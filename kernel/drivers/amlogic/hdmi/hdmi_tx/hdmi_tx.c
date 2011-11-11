@@ -119,20 +119,20 @@ static  int  set_disp_mode(const char *mode)
     HDMI_Video_Codes_t vic;
     vic = hdmitx_edid_get_VIC(&hdmitx_device, mode, 1);
 
-    if(vic != HDMI_Unkown){
+    if(vic != HDMI_Unknown){
         hdmitx_device.mux_hpd_if_pin_high_flag = 1;
         if(hdmitx_device.vic_count == 0){
             return 0;
         }
     }
 
-    hdmitx_device.cur_VIC = HDMI_Unkown;
+    hdmitx_device.cur_VIC = HDMI_Unknown;
     ret = hdmitx_set_display(&hdmitx_device, vic);
     if(ret>=0){
         hdmitx_device.cur_VIC = vic;  
     }
 
-    if(hdmitx_device.cur_VIC == HDMI_Unkown){
+    if(hdmitx_device.cur_VIC == HDMI_Unknown){
         if(hpdmode == 2){
             hdmitx_edid_clear(&hdmitx_device); /* edid will be read again when hpd is muxed and it is high */
             hdmitx_device.mux_hpd_if_pin_high_flag = 0; 
@@ -155,12 +155,12 @@ static int set_disp_mode_auto(void)
 #endif    
     HDMI_Video_Codes_t vic;
     vic = hdmitx_edid_get_VIC(&hdmitx_device, info->name, (hdmitx_device.disp_switch_config==DISP_SWITCH_FORCE)?1:0);
-    hdmitx_device.cur_VIC = HDMI_Unkown;
-    ret = hdmitx_set_display(&hdmitx_device, vic); //if vic is HDMI_Unkown, hdmitx_set_display will disable HDMI
+    hdmitx_device.cur_VIC = HDMI_Unknown;
+    ret = hdmitx_set_display(&hdmitx_device, vic); //if vic is HDMI_Unknown, hdmitx_set_display will disable HDMI
     if(ret>=0){
         hdmitx_device.cur_VIC = vic;    
     }
-    if(hdmitx_device.cur_VIC == HDMI_Unkown){
+    if(hdmitx_device.cur_VIC == HDMI_Unknown){
         if(hpdmode==2){
             hdmitx_edid_clear(&hdmitx_device); /* edid will be read again when hpd is muxed and it is high */
             hdmitx_device.mux_hpd_if_pin_high_flag = 0;
@@ -181,7 +181,7 @@ static unsigned char is_dispmode_valid_for_hdmi(void)
     vinfo_t* info=&lvideo_info;
 #endif    
     vic = hdmitx_edid_get_VIC(&hdmitx_device, info->name, (hdmitx_device.disp_switch_config==DISP_SWITCH_FORCE)?1:0);
-    return (vic != HDMI_Unkown);
+    return (vic != HDMI_Unknown);
 }
 
 #ifndef AVOS
@@ -318,7 +318,7 @@ static ssize_t show_disp_cap(struct device * dev, struct device_attribute *attr,
     HDMI_Video_Codes_t vic;
     for(i=0; disp_mode_t[i]; i++){
         vic = hdmitx_edid_get_VIC(&hdmitx_device, disp_mode_t[i], 0);
-        if( vic != HDMI_Unkown){
+        if( vic != HDMI_Unknown){
             pos += snprintf(buf+pos, PAGE_SIZE,"%s",disp_mode_t[i]);
             if(native_disp_mode&&(strcmp(native_disp_mode, disp_mode_t[i])==0)){
                 pos += snprintf(buf+pos, PAGE_SIZE,"*\n");
@@ -655,7 +655,7 @@ hdmi_task_handle(void *data)
             }
         }
         
-        if((hdmitx_device->audio_param_update_flag)&&(hdmitx_device->cur_VIC != HDMI_Unkown)){
+        if((hdmitx_device->audio_param_update_flag)&&(hdmitx_device->cur_VIC != HDMI_Unknown)){
             hdmitx_set_audio(hdmitx_device, &(hdmitx_device->cur_audio_param));
             hdmitx_device->audio_param_update_flag = 0;
             hdmi_print(1, "HDMI: set audio param\n");
@@ -676,12 +676,12 @@ hdmi_task_handle(void *data)
             hdmitx_edid_clear(hdmitx_device);
 
             if(hdmitx_device->unplug_powerdown){
-                hdmitx_set_display(hdmitx_device, HDMI_Unkown);
+                hdmitx_set_display(hdmitx_device, HDMI_Unknown);
                 if(hdmitx_device->HWOp.Cntl){
                     hdmitx_device->HWOp.Cntl(hdmitx_device, HDMITX_HWCMD_TURNOFF_HDMIHW, (hpdmode!=0)?1:0);    
                 }
             }
-            hdmitx_device->cur_VIC = HDMI_Unkown;
+            hdmitx_device->cur_VIC = HDMI_Unknown;
 
             hdmitx_device->hpd_event = 0;
         }    

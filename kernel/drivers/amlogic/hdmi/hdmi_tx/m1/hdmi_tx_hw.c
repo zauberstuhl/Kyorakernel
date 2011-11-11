@@ -261,8 +261,8 @@ static void intr_handler(void *arg)
         //tasklet_schedule(&EDID_tasklet);
         hdmi_wr_only_reg(OTHER_BASE_ADDR + HDMI_OTHER_INTR_STAT_CLR,  1 << 2); //clear EDID rising interrupt in hdmi module 
     } else {
-        hdmi_print(1,"HDMI Error: Unkown HDMI Interrupt source Process_Irq\n");
-        hdmi_wr_only_reg(OTHER_BASE_ADDR + HDMI_OTHER_INTR_STAT_CLR,  data32); //clear unkown interrupt in hdmi module 
+        hdmi_print(1,"HDMI Error: Unknown HDMI Interrupt source Process_Irq\n");
+        hdmi_wr_only_reg(OTHER_BASE_ADDR + HDMI_OTHER_INTR_STAT_CLR,  data32); //clear unknown interrupt in hdmi module 
     }
 #ifdef AML_A3
     hdmi_rd_reg(OTHER_BASE_ADDR + HDMI_OTHER_INTR_STAT_CLR); // A read to allow the interrupt cleared in hdmi_module before next action
@@ -1773,7 +1773,7 @@ static void restart_edid_hdcp (void)
 static void hdmitx_set_tvenc_reg(int cur_VIC)
 {
     int i,j;
-    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unkown;i++){
+    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unknown;i++){
         if(cur_VIC==hdmi_tvenc_configs[i].vic){
             const  reg_t* reg_set=hdmi_tvenc_configs[i].reg_set;
             for(j=0;reg_set[j].reg;j++){
@@ -1787,7 +1787,7 @@ static void hdmitx_set_tvenc_reg(int cur_VIC)
 static void hdmitx_dump_tvenc_reg(int cur_VIC, int printk_flag) 
 {
     int i,j;
-    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unkown;i++){
+    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unknown;i++){
         if(cur_VIC==hdmi_tvenc_configs[i].vic){
             reg_t* reg_set=hdmi_tvenc_configs[i].reg_set;
             hdmi_print(printk_flag, "------dump tevenc reg for mode %d----\n", cur_VIC);
@@ -1803,7 +1803,7 @@ static void hdmitx_dump_tvenc_reg(int cur_VIC, int printk_flag)
 static void hdmitx_config_tvenc_reg(int vic, unsigned reg, unsigned val)
 {
     int i,j;
-    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unkown;i++){
+    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unknown;i++){
         if(vic==hdmi_tvenc_configs[i].vic){
             reg_t* reg_set=hdmi_tvenc_configs[i].reg_set;
             for(j=0;reg_set[j].reg;j++){
