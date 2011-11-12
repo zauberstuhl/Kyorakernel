@@ -1773,7 +1773,7 @@ static void restart_edid_hdcp (void)
 static void hdmitx_set_tvenc_reg(int cur_VIC)
 {
     int i,j;
-    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unknown;i++){
+    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unkown;i++){
         if(cur_VIC==hdmi_tvenc_configs[i].vic){
             const  reg_t* reg_set=hdmi_tvenc_configs[i].reg_set;
             for(j=0;reg_set[j].reg;j++){
@@ -1787,7 +1787,7 @@ static void hdmitx_set_tvenc_reg(int cur_VIC)
 static void hdmitx_dump_tvenc_reg(int cur_VIC, int printk_flag) 
 {
     int i,j;
-    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unknown;i++){
+    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unkown;i++){
         if(cur_VIC==hdmi_tvenc_configs[i].vic){
             reg_t* reg_set=hdmi_tvenc_configs[i].reg_set;
             hdmi_print(printk_flag, "------dump tevenc reg for mode %d----\n", cur_VIC);
@@ -1803,7 +1803,7 @@ static void hdmitx_dump_tvenc_reg(int cur_VIC, int printk_flag)
 static void hdmitx_config_tvenc_reg(int vic, unsigned reg, unsigned val)
 {
     int i,j;
-    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unknown;i++){
+    for(i=0;hdmi_tvenc_configs[i].vic!=HDMI_Unkown;i++){
         if(vic==hdmi_tvenc_configs[i].vic){
             reg_t* reg_set=hdmi_tvenc_configs[i].reg_set;
             for(j=0;reg_set[j].reg;j++){
