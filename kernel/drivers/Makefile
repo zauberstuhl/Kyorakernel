@@ -67,7 +67,7 @@ obj-$(CONFIG_USB_OTG_UTILS)	+= usb/otg/
 obj-$(CONFIG_USB)		+= usb/
 obj-$(CONFIG_USB_MUSB_HDRC)	+= usb/musb/
 obj-$(CONFIG_PCI)		+= usb/
-obj-$(CONFIG_USB_GADGET)	+= usb/gadget/
+
 obj-$(CONFIG_SERIO)		+= input/serio/
 obj-$(CONFIG_GAMEPORT)		+= input/gameport/
 obj-$(CONFIG_INPUT)		+= input/
@@ -115,3 +115,6 @@ obj-y				+= platform/
 obj-y				+= ieee802154/
 obj-$(CONFIG_ARCH_MESON)	+= amlogic/
 obj-$(CONFIG_BT)		+= bluetooth/
+# usb gadget must come AFTER amlogic/usb/dwc_otg, it need usb controller  
+# initialized firstly.
+obj-$(CONFIG_USB_GADGET)	+= usb/gadget/

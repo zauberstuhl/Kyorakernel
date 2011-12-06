@@ -24,7 +24,9 @@
 
 #ifndef VINFO_H
 #define VINFO_H
-
+//the MSB is represent vmode set by logo
+#define	VMODE_LOGO_BIT_MASK	0x8000	
+#define	VMODE_MODE_BIT_MASK	0xff		
 typedef enum {
     VMODE_480I  = 0,
     VMODE_480CVBS,		
@@ -35,6 +37,9 @@ typedef enum {
     VMODE_720P  ,
     VMODE_1080I ,
     VMODE_1080P ,
+    VMODE_720P_50HZ,
+    VMODE_1080I_50HZ,
+    VMODE_1080P_50HZ,
     VMODE_LCD	,
     VMODE_MAX,
     VMODE_INIT_NULL,

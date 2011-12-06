@@ -13,6 +13,7 @@
 #include <linux/mutex.h>
 #include <linux/cdev.h>
 #include <asm/uaccess.h>
+#include "m1/hdmi_tx_reg.h"
 
 #else
 #include "ioapi.h"
@@ -296,6 +297,13 @@ int Edid_Parse_check_HDMI_VSDB(HDMI_TX_INFO_t * info, unsigned char *buff)
 			break;
 		BlockAddr = BlockAddr + len + 1;
 	}
+
+	//For test only.
+	hdmi_print(0,"HDMI DEBUG [%s]\n", __FUNCTION__);
+    hdmi_print(0,"max_tmds_clk_7:%d\n",buff[BlockAddr + 7]);
+    hdmi_print(0,"Field 8:%d\n",buff[BlockAddr + 8]);
+    hdmi_print(0,"video_latency_9:%d\n",buff[BlockAddr + 9]);
+    hdmi_print(0,"audio_latency_10:%d\n",buff[BlockAddr + 10]);
 
 	if(temp_addr >= VSpecificBoundary)
 	{
@@ -866,6 +874,11 @@ static int hdmitx_edid_block_parse(hdmitx_dev_t* hdmitx_device, unsigned char *B
                 pRXCap->IEEEOUI <<= 8 ;
                 pRXCap->IEEEOUI += (unsigned long)BlockBuf[offset] ;
                 /**/
+                hdmi_print(0, "HDMI_EDID_BLOCK_TYPE_VENDER: IEEEOUI %x:", pRXCap->IEEEOUI);
+                for(i = 0; i<count ;i++){
+                    hdmi_print(0, "%d: %02x\n",i+1, BlockBuf[offset+i]);
+                }
+                /**/
                 pRXCap->ColorDeepSupport = (unsigned long)BlockBuf[offset+5];
                 pRXCap->Max_TMDS_Clock = (unsigned long)BlockBuf[offset+6]; 
                 offset += count ; // ignore the remaind.
@@ -1069,6 +1082,25 @@ char* hdmitx_edid_get_native_VIC(hdmitx_dev_t* hdmitx_device)
     return disp_mode_ret;
 }    
 
+#define EDID_RAM_ADDR_SIZE      (4*128)
+//Clear HDMI Hardware Module EDID RAM and EDID Buffer
+void hdmitx_edid_ram_buffer_clear(hdmitx_dev_t* hdmitx_device)
+{
+    unsigned int i = 0;
+    
+    //Clear HDMI Hardware Module EDID RAM
+    for(i = 0; i < EDID_RAM_ADDR_SIZE; i++)
+    {
+        hdmi_wr_reg(TX_RX_EDID_OFFSET + i, 0);
+    }
+    //Clear EDID Buffer
+    for(i = 0; i < EDID_MAX_BLOCK*128; i++)
+    {
+        hdmitx_device->EDID_buf[i] = 0;
+    }
+}
+
+//Clear the Parse result of HDMI Sink's EDID.
 void hdmitx_edid_clear(hdmitx_dev_t* hdmitx_device)
 {
     rx_cap_t* pRXCap = &(hdmitx_device->RXCap);

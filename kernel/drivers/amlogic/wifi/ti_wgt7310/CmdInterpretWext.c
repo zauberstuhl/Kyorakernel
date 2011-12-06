@@ -137,7 +137,7 @@ void cmdInterpret_Init (TI_HANDLE hCmdInterpret, TStadHandlesList *pStadHandles)
     cmdInterpret_initEvents (hCmdInterpret);
 }
 
-extern struct net_device *g_dev;
+
 /* Handle a single command */
 int cmdInterpret_convertAndExecute(TI_HANDLE hCmdInterpret, TConfigCommand *cmdObj)
 {
@@ -221,9 +221,6 @@ int cmdInterpret_convertAndExecute(TI_HANDLE hCmdInterpret, TConfigCommand *cmdO
             {
                 wrqu->freq.m = pParam->content.siteMgrCurrentChannel;
                 wrqu->freq.e = 3;
-
-
-
                 wrqu->freq.i = 0;
             }
             break;
@@ -312,38 +309,22 @@ int cmdInterpret_convertAndExecute(TI_HANDLE hCmdInterpret, TConfigCommand *cmdO
         /* Get sensitivity (Rssi threshold OR CCA?)*/
     case SIOCGIWSENS:
         {
-            pParam->paramType = SITE_MGR_GET_STATS;
+            pParam->paramType = ROAMING_MNGR_APPLICATION_CONFIGURATION;
+            pParam->paramLength = sizeof (roamingMngrConfigParams_t);
             res = cmdDispatch_GetParam(pCmdInterpret->hCmdDispatch, pParam);
 
             CHECK_PENDING_RESULT(res,pParam)
 
             if (res == TI_OK)
             {
-                wrqu->param.value = (TI_UINT8)pParam->content.siteMgrCurrentRssi;
+                wrqu->param.value = pParam->content.roamingConfigBuffer.roamingMngrThresholdsConfig.lowRssiThreshold;
                 wrqu->param.disabled = (wrqu->param.value == 0);
                 wrqu->param.fixed = 1;
             }
 
             break;
         }
-#if 0
-	/* Get LinkSpeed */
-    case SIOCGIWRATE:
-    	{
-    	    pParam->paramType = SITE_MGR_CURRENT_RATE_PAIR_PARAM;
-            res = cmdDispatch_GetParam(pCmdInterpret->hCmdDispatch, pParam);
 
-            CHECK_PENDING_RESULT(res,pParam)
-
-            if (res == TI_OK)
-            {
-                wrqu->param.value = 54 * 1000000;
-                os_printf("RxRate = %d, TxRate = %d\n", (TI_UINT8)pParam->content.siteMgrCurrentRxRate, (TI_UINT8)pParam->content.siteMgrCurrentTxRate);
-            }
-
-            break;
-    	}
-#endif   	
         /* Get a range of parameters regarding the device capabilities */
     case SIOCGIWRANGE:
         {
@@ -598,6 +579,7 @@ int cmdInterpret_convertAndExecute(TI_HANDLE hCmdInterpret, TConfigCommand *cmdO
             TScanParams scanParams;
             pParam->content.pScanParams = &scanParams;
 
+
             /* Init the parameters in case the Supplicant doesn't support them*/
             pParam->content.pScanParams->desiredSsid.len = 0;
             scanReq.scan_type = SCAN_TYPE_TRIGGERED_ACTIVE;
@@ -629,12 +611,8 @@ int cmdInterpret_convertAndExecute(TI_HANDLE hCmdInterpret, TConfigCommand *cmdO
 
             pParam->paramType = SCAN_CNCN_BSSID_LIST_SCAN_PARAM;
             pParam->paramLength = sizeof(TScanParams);
-
             res = cmdDispatch_SetParam (pCmdInterpret->hCmdDispatch, pParam );
             CHECK_PENDING_RESULT(res,pParam)
-            
-            memset(wrqu, 0, sizeof(union iwreq_data));
-            wireless_send_event(g_dev, SIOCGIWSCAN, wrqu, NULL);
         }
         break;
 
@@ -857,10 +835,16 @@ int cmdInterpret_convertAndExecute(TI_HANDLE hCmdInterpret, TConfigCommand *cmdO
                 os_memorySet (pCmdInterpret->hOs, &iwe, 0, sizeof(iwe));
                 iwe.cmd = IWEVGENIE;
                 offset = sizeof(OS_802_11_FIXED_IEs);
-                while(offset < my_current->IELength)
+                
+                //while(offset < my_current->IELength)
+                while((offset + sizeof(OS_802_11_VARIABLE_IEs)) <= my_current->IELength)
                 {
                         OS_802_11_VARIABLE_IEs *pIE;
                         pIE = (OS_802_11_VARIABLE_IEs*)&(my_current->IEs[offset]);
+                        
+                        if ((offset+pIE->Length+2) > my_current->IELength)
+                        	break;
+                        	
                         iwe.u.data.flags = 1;
                         iwe.u.data.length = pIE->Length + 2;
 
@@ -1479,7 +1463,7 @@ int cmdInterpret_convertAndExecute(TI_HANDLE hCmdInterpret, TConfigCommand *cmdO
             }
 
             /* need to free the allocated memory */
-            if(IS_ALLOC_NEEDED_PARAM(my_command->cmd))
+            if(IS_ALLOC_NEEDED_PARAM(my_command->cmd) && my_command->in_buffer_len > 0)
             {
                 os_memoryFree(pCmdInterpret->hOs, *(void **)&pParam->content, my_command->in_buffer_len);
             }

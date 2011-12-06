@@ -19,7 +19,9 @@
 **																   **
 *******************************************************************/
 /******************logo entry point ***************/
-
+ #ifdef CONFIG_FB_MULTI_OUTPUT_MODE
+ char outputmode[] = "720p";
+#endif
 MODULE_AMLOG(LOG_LEVEL_MAX-1, LOG_MASK_ALL, LOG_LEVEL_DESC, LOG_MASK_DESC);
 logo_object_t  aml_logo={
 	.name="default",
@@ -66,7 +68,9 @@ static inline int install_logo_info(logo_object_t *plogo,char *para)
 //dbg
 	{"dbg",LOGO_DBG_ENABLE,	PARA_FOURTH_GROUP_START-1,	PARA_FOURTH_GROUP_START+1,	PARA_FOURTH_GROUP_START,PARA_FIFTH_GROUP_START-1},  //18
 //progress	
-	{"progress",LOGO_PROGRESS_ENABLE,PARA_FIFTH_GROUP_START-1,PARA_FIFTH_GROUP_START+1,PARA_FIFTH_GROUP_START,PARA_END},
+	{"progress",LOGO_PROGRESS_ENABLE,PARA_FIFTH_GROUP_START-1,PARA_FIFTH_GROUP_START+1,PARA_FIFTH_GROUP_START,PARA_SIXTH_GROUP_START-1},
+//loaded
+	{"loaded",LOGO_LOADED,PARA_SIXTH_GROUP_START-1,PARA_SIXTH_GROUP_START+1,PARA_SIXTH_GROUP_START,PARA_END},
 //tail	
 	{"tail",INVALID_INFO,PARA_END,0,0,PARA_END+1},
 	};
@@ -91,6 +95,9 @@ static inline int install_logo_info(logo_object_t *plogo,char *para)
 				break;
 				case PARA_SECOND_GROUP_START:
 				plogo->para.vout_mode=(vmode_t)para_info_pair[i].info;
+				#ifdef CONFIG_FB_MULTI_OUTPUT_MODE
+				strcpy(outputmode,para_info_pair[i].name);
+				#endif
 				break;
 				case PARA_THIRD_GROUP_START:
 				plogo->para.dis_mode=(logo_display_mode_t)para_info_pair[i].info;
@@ -102,6 +109,10 @@ static inline int install_logo_info(logo_object_t *plogo,char *para)
 				break;
 				case PARA_FIFTH_GROUP_START:
 				plogo->para.progress=1;
+				break;	
+				case PARA_SIXTH_GROUP_START:
+				plogo->para.loaded=1;
+				amlog_level(LOG_LEVEL_MAX,"logo has been loaded\n");
 				break;	
 			}
 			para_info_pair[prev].next_idx=next;
@@ -120,7 +131,7 @@ static inline int install_logo_info(logo_object_t *plogo,char *para)
 }
 logo_object_t*	 get_current_logo_obj(void)
 {
-	if(aml_logo.dev ==NULL || aml_logo.parser ==NULL)
+	if((aml_logo.dev ==NULL || aml_logo.parser ==NULL)&&!aml_logo.para.loaded)
 	{
 		return NULL;
 	}

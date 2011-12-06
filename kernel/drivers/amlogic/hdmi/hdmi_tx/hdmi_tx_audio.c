@@ -57,11 +57,13 @@ static void hdmi_tx_construct_aud_packet(Hdmi_tx_audio_para_t* audio_param, unsi
 {
 #ifndef PCM_USE_INFOFRAME
     if((audio_param->type == CT_PCM)&&(audio_param->channel_num==CC_2CH)){
+        printk("HDMI Audio Type: PCM\n");
         if(AUD_DB){
-            AUD_DB[0] = (audio_param->type<<4)|(CC_REFER_TO_STREAM) ; 
+//Note: HDMI Spec V1.4 Page 154
+            AUD_DB[0] = (CC_REFER_TO_STREAM<<4)|(CC_REFER_TO_STREAM) ; 
             AUD_DB[1] = (FS_REFER_TO_STREAM<<2)|SS_REFER_TO_STREAM;
-            AUD_DB[4] = 0; //CA, 2 channel
-            AUD_DB[5] = 0;//DM_INH<<7|LSV<<3
+            AUD_DB[3] = 0; //CA, 2 channel
+            AUD_DB[4] = 0;//DM_INH<<7|LSV<<3
         }
         if(CHAN_STAT_BUF){
             CHAN_STAT_BUF[2]=0x10|(audio_param->channel_num+1);  CHAN_STAT_BUF[24+2]=0x20|(audio_param->channel_num+1); 
@@ -70,14 +72,23 @@ static void hdmi_tx_construct_aud_packet(Hdmi_tx_audio_para_t* audio_param, unsi
                     ((~channel_status_freq[audio_param->sample_rate])<<4);
         }            
     }
+    else if(audio_param->type == CT_AC_3){
+        printk("HDMI Audio Type: AC3\n");
+        if(AUD_DB){
+            AUD_DB[0] = (CT_AC_3<<4)|(CC_REFER_TO_STREAM) ;
+            AUD_DB[1] = (FS_REFER_TO_STREAM<<2)|SS_REFER_TO_STREAM;
+            AUD_DB[3] = 0; //CA, 2 channel
+            AUD_DB[4] = 0;//DM_INH<<7|LSV<<3
+        }
+    }
     else
 #endif        
     {
         if(AUD_DB){
             AUD_DB[0] = (audio_param->type<<4)|audio_param->channel_num ; 
             AUD_DB[1] = (audio_param->sample_rate<<2)|audio_param->sample_size;
-            AUD_DB[4] = 0; //CA, 2 channel
-            AUD_DB[5] = 0;//DM_INH<<7|LSV<<3
+            AUD_DB[3] = 0; //CA, 2 channel
+            AUD_DB[4] = 0;//DM_INH<<7|LSV<<3
         }
         if(CHAN_STAT_BUF){
             CHAN_STAT_BUF[3]=CHAN_STAT_BUF[24+3]=channel_status_freq[audio_param->sample_rate];

@@ -30,6 +30,7 @@
 #include <linux/amports/canvas.h>
 #include <linux/amports/vframe.h>
 #include <linux/amports/vframe_provider.h>
+#include <linux/amports/vframe_receiver.h>
 #include <mach/am_regs.h>
 
 #ifdef CONFIG_AM_VDEC_MJPEG_LOG
@@ -83,19 +84,22 @@ MODULE_AMLOG(LOG_LEVEL_ERROR, 0, LOG_LEVEL_DESC, LOG_DEFAULT_MASK_DESC);
 
 static struct dec_sysinfo vmjpeg_amstream_dec_info;
 
-static vframe_t *vmjpeg_vf_peek(void);
-static vframe_t *vmjpeg_vf_get(void);
-static void vmjpeg_vf_put(vframe_t *);
-static int  vmjpeg_vf_states(vframe_states_t *states);
+static vframe_t *vmjpeg_vf_peek(void*);
+static vframe_t *vmjpeg_vf_get(void*);
+static void vmjpeg_vf_put(vframe_t *, void*);
+static int  vmjpeg_vf_states(vframe_states_t *states, void*);
 
 
 static const char vmjpeg_dec_id[] = "vmjpeg-dev";
-static const struct vframe_provider_s vmjpeg_vf_provider = {
+
+#define PROVIDER_NAME   "decoder.mjpeg"
+static const struct vframe_operations_s vmjpeg_vf_provider = {
     .peek = vmjpeg_vf_peek,
     .get  = vmjpeg_vf_get,
     .put  = vmjpeg_vf_put,
     .vf_states = vmjpeg_vf_states,
 };
+static struct vframe_provider_s vmjpeg_vf_prov;
 
 static struct vframe_s vfpool[VF_POOL_SIZE];
 static u32 vfpool_idx[VF_POOL_SIZE];
@@ -178,6 +182,7 @@ static irqreturn_t vmjpeg_isr(int irq, void *dev_id)
             vfbuf_use[index]++;
 
             INCPTR(fill_ptr);
+		vf_notify_receiver(PROVIDER_NAME,VFRAME_EVENT_PROVIDER_VFRAME_READY,NULL);               
 
         } else {
             u32 index = ((reg & PICINFO_BUF_IDX_MASK) - 1) & 3;
@@ -231,6 +236,7 @@ static irqreturn_t vmjpeg_isr(int irq, void *dev_id)
             vfbuf_use[index]++;
 
             INCPTR(fill_ptr);
+		vf_notify_receiver(PROVIDER_NAME,VFRAME_EVENT_PROVIDER_VFRAME_READY,NULL);            
 #endif
         }
 
@@ -240,7 +246,7 @@ static irqreturn_t vmjpeg_isr(int irq, void *dev_id)
     return IRQ_HANDLED;
 }
 
-static vframe_t *vmjpeg_vf_peek(void)
+static vframe_t *vmjpeg_vf_peek(void* op_arg)
 {
     if (get_ptr == fill_ptr) {
         return NULL;
@@ -249,7 +255,7 @@ static vframe_t *vmjpeg_vf_peek(void)
     return &vfpool[get_ptr];
 }
 
-static vframe_t *vmjpeg_vf_get(void)
+static vframe_t *vmjpeg_vf_get(void* op_arg)
 {
     vframe_t *vf;
 
@@ -264,19 +270,29 @@ static vframe_t *vmjpeg_vf_get(void)
     return vf;
 }
 
-static void vmjpeg_vf_put(vframe_t *vf)
+static void vmjpeg_vf_put(vframe_t *vf, void* op_arg)
 {
     INCPTR(putting_ptr);
 }
-static int  vmjpeg_vf_states(vframe_states_t *states)
+static int  vmjpeg_vf_states(vframe_states_t *states, void* op_arg)
 {
+    int i;
     unsigned long flags;
     spin_lock_irqsave(&lock, flags);
+
     states->vf_pool_size = VF_POOL_SIZE;
-    states->fill_ptr = fill_ptr;
-    states->get_ptr = get_ptr;
-    states->putting_ptr = putting_ptr;
-    states->put_ptr = put_ptr;
+    i = put_ptr - fill_ptr;
+    if (i < 0) i += VF_POOL_SIZE;
+    states->buf_free_num = i;
+    
+    i = putting_ptr - put_ptr;
+    if (i < 0) i += VF_POOL_SIZE;
+    states->buf_recycle_num = i;
+    
+    i = fill_ptr - get_ptr;
+    if (i < 0) i += VF_POOL_SIZE;
+    states->buf_avail_num = i;
+
     spin_unlock_irqrestore(&lock, flags);
     return 0;
 }
@@ -525,7 +541,14 @@ static s32 vmjpeg_init(void)
 
     stat |= STAT_ISR_REG;
 
-    vf_reg_provider(&vmjpeg_vf_provider);
+ #ifdef CONFIG_POST_PROCESS_MANAGER
+    vf_provider_init(&vmjpeg_vf_prov, PROVIDER_NAME, &vmjpeg_vf_provider, NULL);
+    vf_reg_provider(&vmjpeg_vf_prov);
+    vf_notify_receiver(PROVIDER_NAME,VFRAME_EVENT_PROVIDER_START,NULL);               
+ #else 
+    vf_provider_init(&vmjpeg_vf_prov, PROVIDER_NAME, &vmjpeg_vf_provider, NULL);
+    vf_reg_provider(&vmjpeg_vf_prov);
+ #endif 
 
     stat |= STAT_VF_HOOK;
 
@@ -591,7 +614,7 @@ static int amvdec_mjpeg_remove(struct platform_device *pdev)
     }
 
     if (stat & STAT_VF_HOOK) {
-        vf_unreg_provider();
+        vf_unreg_provider(&vmjpeg_vf_prov);
         stat &= ~STAT_VF_HOOK;
     }
 
@@ -615,7 +638,10 @@ static struct platform_driver amvdec_mjpeg_driver = {
         .name   = DRIVER_NAME,
     }
 };
-
+static struct codec_profile_t amvdec_mjpeg_profile = {
+	.name = "mjpeg",
+	.profile = ""
+};
 static int __init amvdec_mjpeg_driver_init_module(void)
 {
     amlog_level(LOG_LEVEL_INFO, "amvdec_mjpeg module init\n");
@@ -624,7 +650,7 @@ static int __init amvdec_mjpeg_driver_init_module(void)
         amlog_level(LOG_LEVEL_ERROR, "failed to register amvdec_mjpeg driver\n");
         return -ENODEV;
     }
-
+	vcodec_profile_register(&amvdec_mjpeg_profile);
     return 0;
 }
 

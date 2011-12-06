@@ -147,6 +147,7 @@ typedef struct _SD_REG_CSD {
 } SD_REG_CSD_t;
 
 
+
 typedef struct _SDHC_REG_CSD {
 	
 	unsigned Reserved1:6;
@@ -199,32 +200,106 @@ typedef struct _SDHC_REG_CSD {
 	unsigned CRC:7;	//CRC checksum
 } SDHC_REG_CSD_t;
 
-/*typedef struct _MMC_REG_EXT_CSD
+
+
+typedef struct _MMC_REG_EXT_CSD
 {
-    unsigned char Reserved1[7];
-    unsigned char S_CMD_SET;
-    unsigned char Reserved2[300];
-    unsigned char PWR_CL_26_360;
-    unsigned char PWR_CL_52_360;
-    unsigned char PWR_CL_26_195;
-    unsigned char PWR_CL_52_195;
-    unsigned char Reserved3[3];
-    unsigned char CARD_TYPE;
-    unsigned char Reserved4;
-    unsigned char CSD_STRUCTURE;
-    unsigned char Reserved5;
-    unsigned char EXT_CSD_REV;
-    unsigned char CMD_SET;
-    unsigned char Reserved6;
-    unsigned char CMD_SET_REV;
-    unsigned char Reserved7;
-    unsigned char POWER_CLASS;
-    unsigned char Reserved8;
-    unsigned char HS_TIMING;
-    unsigned char Reserved9;
-    unsigned char BUS_WIDTH;
-    unsigned char Reserved10[183];
-            } MMC_REG_EXT_CSD_t;*/// reserved for future use
+ 	unsigned char Reserved26[134];                 //133
+ 	unsigned char SEC_BAD_BLK_MGMNT;               //134
+ 	unsigned char Reserved25;                      //135
+ 	unsigned char ENH_START_ADDR[4];               //136
+ 	unsigned char ENH_SIZE_MULT[3];                //140
+ 	unsigned char GP_SIZE_MULT[12];                //143
+ 	unsigned char PARTITION_SETTING_COMPLETED;     //155
+ 	unsigned char PARTITIONS_ATTRIBUTE;            //156
+ 	unsigned char MAX_ENH_SIZE_MULT[3];            //157
+ 	unsigned char PARTITIONING_SUPPORT;            //160
+ 	unsigned char HPI_MGMT;                        //161
+ 	unsigned char RST_n_FUNCTION;                  //162
+ 	unsigned char BKOPS_EN;                        //163
+ 	unsigned char BKOPS_START;                     //164
+ 	unsigned char Reserved24;                      //165
+ 	unsigned char WR_REL_PARAM;                    //166
+ 	unsigned char WR_REL_SET;                      //167
+ 	unsigned char RPMB_SIZE_MULT;                  //168
+ 	unsigned char FW_CONFIG;                       //169
+ 	unsigned char Reserved23; 	                   //170
+ 	unsigned char USER_WP;                         //171
+ 	unsigned char Reserved22;                      //172
+ 	unsigned char BOOT_WP;                         //173
+ 	unsigned char Reserved21; 	                   //174
+ 	unsigned char ERASE_GROUP_DEF;                 //175
+ 	unsigned char Reserved20; 	                   //176
+ 	unsigned char BOOT_BUS_WIDTH;                  //177
+ 	unsigned char BOOT_CONFIG_PROT;                //178
+ 	unsigned char PARTITION_CONFIG;                //179
+ 	unsigned char Reserved19;                      //180
+ 	unsigned char ERASED_MEM_CONT;                 //181
+ 	unsigned char Reserved18;                      //182
+ 	unsigned char BUS_WIDTH;                       //183
+ 	unsigned char Reserved17;                      //184
+ 	unsigned char HS_TIMING;                       //185
+ 	unsigned char Reserved16;                      //186
+ 	unsigned char POWER_CLASS;                     //187
+ 	unsigned char Reserved15;                      //188
+ 	unsigned char CMD_SET_REV;                     //189
+ 	unsigned char Reserved14;                      //190 
+ 	unsigned char CMD_SET;                         //191
+ 	unsigned char EXT_CSD_REV;                     //192
+ 	unsigned char Reserved13;                      //193
+ 	unsigned char CSD_STRUCTURE;                   //194
+ 	unsigned char Reserved12;                      //195
+ 	unsigned char CARD_TYPE;                       //196
+ 	unsigned char Reserved11;                      //197
+ 	unsigned char OUT_OF_INTERRUPT_TIME;           //198
+ 	unsigned char PARTITION_SWITCH_TIME;           //199
+ 	unsigned char PWR_CL_52_195;                   //200
+ 	unsigned char PWR_CL_26_195;                   //201
+ 	unsigned char PWR_CL_52_360;                   //202
+ 	unsigned char PWR_CL_26_360;                   //203
+ 	unsigned char Reserved10;                      //204
+ 	unsigned char MIN_PERF_R_4_26;                 //205
+ 	unsigned char MIN_PERF_W_4_26;                 //206
+ 	unsigned char MIN_PERF_R_8_26_4_52;            //207
+ 	unsigned char MIN_PERF_W_8_26_4_52;            //208
+ 	unsigned char MIN_PERF_R_8_52;                 //209
+ 	unsigned char MIN_PERF_W_8_52;                 //210
+ 	unsigned char Reserved9;                       //211
+ 	unsigned char SEC_COUNT[4];                    //212
+ 	unsigned char Reserved8;                       //216
+ 	unsigned char S_A_TIMEOUT;                     //217
+ 	unsigned char Reserved7;                       //218
+ 	unsigned char S_C_VCCQ;                        //219
+ 	unsigned char S_C_VCC;                         //220
+ 	unsigned char HC_WP_GRP_SIZE;                  //221
+ 	unsigned char REL_WR_SEC_C;                    //222
+ 	unsigned char ERASE_TIMEOUT_MULT;              //223
+ 	unsigned char HC_ERASE_GRP_SIZE;               //224
+ 	unsigned char ACC_SIZE;                        //225
+ 	unsigned char BOOT_SIZE_MULTI;                 //226
+ 	unsigned char Reserved6;                       //227
+ 	unsigned char BOOT_INFO;                       //228
+ 	unsigned char SEC_TRIM_MULT;                   //229
+ 	unsigned char SEC_ERASE_MULT;                  //230
+ 	unsigned char SEC_FEATURE_SUPPORT;             //231
+ 	unsigned char TRIM_MULT;                       //232
+ 	unsigned char Reserved5;                       //233
+ 	unsigned char MIN_PERF_DDR_R_8_52;             //234
+ 	unsigned char MIN_PERF_DDR_W_8_52;             //235
+ 	unsigned char Reserved4[2];                    //236
+ 	unsigned char PWR_CL_DDR_52_195;               //238
+ 	unsigned char PWR_CL_DDR_52_360;               //239
+ 	unsigned char Reserved3;                       //240
+ 	unsigned char INI_TIMEOUT_AP;                  //241
+ 	unsigned char CORRECTLY_PRG_SECTORS_NUM[4];    //242
+ 	unsigned char BKOPS_STATUS;                    //246
+ 	unsigned char Reserved2[255];                  //247
+ 	unsigned char BKOPS_SUPPORT;                   //502
+ 	unsigned char HPI_FEATURES;                    //503
+ 	unsigned char S_CMD_SET;                       //504
+    unsigned char Reserved1[7];                    //505
+} MMC_REG_EXT_CSD_t;
+
     
 //MSB->LSB, structure for SD CARD Configuration Register
 typedef struct _SD_REG_SCR {
@@ -561,7 +636,8 @@ typedef enum SD_Card_Type {
 	CARD_TYPE_NONE = 0, 
 	CARD_TYPE_SD, 
 	CARD_TYPE_SDHC, 
-	CARD_TYPE_MMC, 
+	CARD_TYPE_MMC,
+	CARD_TYPE_EMMC, 
 	CARD_TYPE_SDIO 
 } SD_Card_Type_t;
 
@@ -632,6 +708,8 @@ typedef struct SD_MMC_Card_Info {
 	int single_blk_failed;
 	int sdio_init_flag;	
 
+	unsigned emmc_boot_support;
+	unsigned emmc_boot_partition_size[2];
 	unsigned sd_save_hw_io_flag;
 	unsigned sd_save_hw_io_config;
 	unsigned sd_save_hw_io_mult_config;
@@ -652,6 +730,7 @@ typedef struct SD_MMC_Card_Info {
 	void (*sd_mmc_io_release) (void);
 } SD_MMC_Card_Info_t;
 
+#define EMMC_BOOT_SIZE_UNIT (128*1024)  // for emmc boot size
     //SDIO_REG_DEFINE
 #define CCCR_SDIO_SPEC_REG               0x00
 #define SD_SPEC_REG                      0x01
@@ -717,7 +796,7 @@ typedef struct SD_MMC_Card_Info {
 #define SD_SWITCH_FUNCTION				46	//bcr   [31:23]mode,[22:8]default bit,[7:0]function
 #define SD_MMC_SELECT_DESELECT_CARD     7	//ac    [31:16] RCA             R1
 #define SD_SEND_IF_COND                 8	//      [11:8]supply voltage    R7
-#define MMC_SEND_EXT_CSD                8	//ac    [31:0]stuff             R1
+#define MMC_SEND_EXT_CSD                48	//ac    [31:0]stuff             R1
 #define SD_MMC_SEND_CSD                 9	//ac    [31:16] RCA             R2
 #define SD_MMC_SEND_CID                 10	//ac    [31:16] RCA             R2
 #define SD_READ_DAT_UNTIL_STOP          11	//adtc  [31:0] data address     R1

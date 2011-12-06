@@ -13,6 +13,8 @@ char *data;
 };
 
 
+#define AUDIODSP_SYNC_AUDIO_PAUSE					_IO('a', 0x01)
+#define AUDIODSP_SYNC_AUDIO_RESUME					_IO('a', 0x02)
 
 #define AUDIODSP_SET_FMT						_IOW('a',1,long)
 #define AUDIODSP_START							_IOW('a',2,long)
@@ -21,6 +23,12 @@ char *data;
 #define AUDIODSP_DECODE_STOP						_IOW('a',5,long)
 #define AUDIODSP_REGISTER_FIRMWARE					_IOW('a',6,long)
 #define AUDIODSP_UNREGISTER_ALLFIRMWARE					_IOW('a',7,long)
+#define AUDIODSP_SYNC_AUDIO_START					_IOW('a',8,unsigned long)
+#define AUDIODSP_SYNC_AUDIO_TSTAMP_DISCONTINUITY	_IOW('a',9,unsigned long)
+#define AUDIODSP_SYNC_SET_APTS						_IOW('a',10,unsigned long)
+#define AUDIODSP_WAIT_FORMAT						_IOW('a',11,long)
+
+#define AUDIODSP_DROP_PCMDATA					_IOW('a',12, unsigned long)
 
 
 #define AUDIODSP_GET_CHANNELS_NUM					_IOR('r',1,long)
@@ -29,6 +37,8 @@ char *data;
 #define AUDIODSP_GET_PTS						_IOR('r',4,long)
 #define AUDIODSP_GET_DECODED_NB_FRAMES			_IOR('r',5,long)
 #define AUDIODSP_GET_FIRST_PTS_FLAG				_IOR('r',6,long)
+#define AUDIODSP_SYNC_GET_APTS					_IOR('r',7,unsigned long)
+#define AUDIODSP_SYNC_GET_PCRSCR					_IOR('r',8,unsigned long)
 
 #define MCODEC_FMT_MPEG123 (1<<0)
 #define MCODEC_FMT_AAC 	  (1<<1)
@@ -42,5 +52,7 @@ char *data;
 #define MCODEC_FMT_WMA     (1<<9)
 #define MCODEC_FMT_PCM      (1<<10)
 #define MCODEC_FMT_WMAPRO     (1<<11)
+#define MCODEC_FMT_ALAC     (1<<12)
+#define MCODEC_FMT_APE     (1<<15)
 #endif
 

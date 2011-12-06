@@ -305,6 +305,15 @@ enum {
 
 	/* OV5642,   */
 	V4L2_IDENT_OV5642 =  22,
+	
+	/* SP0838,   */
+	V4L2_IDENT_SP0838 =  23,	
+
+	/* OV7675,   */
+	V4L2_IDENT_OV7675 =  24,
+
+	/* OV2655,   */
+	V4L2_IDENT_OV2655 =  25,
 };
 
 #endif

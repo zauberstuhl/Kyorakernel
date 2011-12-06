@@ -528,6 +528,11 @@ static int set_config(struct usb_composite_dev *cdev,
 	power = c->bMaxPower ? (2 * c->bMaxPower) : CONFIG_USB_GADGET_VBUS_DRAW;
 done:
 	usb_gadget_vbus_draw(gadget, power);
+
+#ifdef CONFIG_POWER_SUPPLY 
+	if(!result)
+            pc_connect(1); 
+#endif
 	return result;
 }
 
@@ -800,9 +805,6 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		switch (w_value >> 8) {
 
 		case USB_DT_DEVICE:
-#ifdef CONFIG_POWER_SUPPLY 
-            pc_connect(1); 
-#endif		    
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
 			value = min(w_length, (u16) sizeof cdev->desc);
@@ -982,7 +984,7 @@ static void composite_disconnect(struct usb_gadget *gadget)
 	 */
 	spin_lock_irqsave(&cdev->lock, flags);
 #ifdef CONFIG_POWER_SUPPLY 
-    pc_connect(0); 
+	pc_connect(0); 
 #endif		
 	if (cdev->config)
 		reset_config(cdev);

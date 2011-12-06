@@ -115,24 +115,14 @@ enum {
 
 /* ADC Calibration resistor divider selection */
 enum {
-	CAL_0P55V = 0,	/* connected to 0.55v */
-	CAL_1P10V,		/* connected to 1.10v */
-	CAL_1P65V,		/* connected to 1.65v */
-	CAL_2P20V,		/* connected to 2.20v */
+	CAL_VOLTAGE_1,	/* VSS */
+	CAL_VOLTAGE_2,	/* VDD * 1/4 */
+	CAL_VOLTAGE_3,	/* VDD * 2/4 */
+	CAL_VOLTAGE_4,	/* VDD * 3/4 */
+	CAL_VOLTAGE_5,	/* VDD */
+	INTERNAL_CAL_NUM,
 };
-#define set_cal_voltage(sel)	set_bits(SAR_ADC_REG3, sel, 24, 2)
-
-/* ADC Calibration Mux, This bit should be set to 0 for calibration */
-enum {
-	MUX_CAL = 0,		/*SAR ADC connected to the internal resistor divider array */
-	MUX_NORMAL,	/* Normal SAR ADC operation (SAR ADC connected to 12:1 mux) */
-};
-#define set_cal_mux(mux)	set_bits(SAR_ADC_REG3, mux, 26, 1)
-
-/* enable/disable ADC calibration resistor array
-   This bit should be set to 0 in order to enable SAR ADC calibration using the internal resistor divider */
-#define enable_cal_res_array()	set_bits(SAR_ADC_REG3, 0, 27, 1)
-#define disable_cal_res_array()	set_bits(SAR_ADC_REG3, 1, 27, 1)
+#define set_cal_voltage(sel)	set_bits(SAR_ADC_REG3, sel, 23, 3)
 
 /* TEMPSEN_PD12, TEMPSEN_MODE */
 #define set_tempsen(val)	set_bits(SAR_ADC_REG3, val, 28, 2)
@@ -141,6 +131,7 @@ enum {
 #define enable_clock()	set_bits(SAR_ADC_REG3, 1, 30, 1)
 #define disable_clock()	set_bits(SAR_ADC_REG3, 0, 30, 1)
 
+#define set_sc_phase() set_bits(SAR_ADC_REG3, 1, 26, 1)
 
 // REG4
 /* set_input_delay() - set input delay

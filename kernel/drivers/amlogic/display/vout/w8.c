@@ -37,7 +37,7 @@
 #include <mach/am_regs.h>
 #include <mach/pinmux.h>
 #include <mach/power_gate.h>
-
+//cpt CLAA080XA02BT2 
 #define LCD_WIDTH       1024
 #define LCD_HEIGHT      768
 #define MAX_WIDTH       1344
@@ -62,7 +62,7 @@ static tcon_conf_t tcon_config =
     .gamma_vcom_hswitch_addr = 0,
     .rgb_base_addr = 0xf0,
     .rgb_coeff_addr = 0x74a,
-    .pol_cntl_addr = (0x0 << LCD_CPH1_POL) |(0x1 << LCD_HS_POL) | (0x1 << LCD_VS_POL),
+    .pol_cntl_addr = (0x1 << LCD_CPH1_POL) |(0x1 << LCD_HS_POL) | (0x1 << LCD_VS_POL),
     .dith_cntl_addr = 0x400,
     .sth1_hs_addr = 0,
     .sth1_he_addr = 0,

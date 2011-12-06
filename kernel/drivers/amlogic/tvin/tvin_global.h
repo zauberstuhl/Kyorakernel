@@ -156,7 +156,7 @@ typedef struct tvin_format_s {
 #define CAMERA_IN_ANCI_DATA_SIZE        0x4000 //save anci data from bt656in
 
 
-#define TVIN_MAX_PIXS					1920*1080
+#define TVIN_MAX_PIXS					1600*1200
 
 #endif // __TVIN_GLOBAL_H
 

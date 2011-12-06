@@ -30,7 +30,7 @@
 #include <linux/vout/vout_notify.h>
 #include <linux/kernel.h>
 #include <linux/interrupt.h>
-
+#include <linux/logo/logo.h>
 #include <mach/am_regs.h>
 #include <asm/fiq.h>
 
@@ -261,7 +261,6 @@ static int lcd_set_current_vmode(vmode_t mode)
         pDev->lcd_info.mode = VMODE_LCD;
     else
         _enable_backlight(BL_MAX_LEVEL);
-    printk("\n\nlcd_set_current_vmode.\n\n");
 	return 0;
 }
 
@@ -274,7 +273,8 @@ static vmode_t lcd_validate_vmode(char *mode)
 }
 static int lcd_vmode_is_supported(vmode_t mode)
 {
-	if(mode == VMODE_LCD)
+	mode&=VMODE_MODE_BIT_MASK;
+	if(mode == VMODE_LCD )
 	return true;
 	return false;
 }
@@ -293,24 +293,11 @@ static int lcd_suspend(void)
     _disable_backlight();
 	pDev->conf.power_off?pDev->conf.power_off():0;
 
-#ifdef FIQ_VSYNC
-	disable_fiq(INT_VIU_VSYNC);
-#else
-    disable_irq(INT_VIU_VSYNC);
-#endif
-
 	return 0;
 }
 static int lcd_resume(void)
 {
 	printk("lcd_resume\n");
-
-#ifdef FIQ_VSYNC
-	enable_fiq(INT_VIU_VSYNC);
-#else
-	enable_irq(INT_VIU_VSYNC);
-#endif
-
 	_lcd_module_enable();
     _enable_backlight(BL_MAX_LEVEL);
 	return 0;
@@ -348,7 +335,12 @@ static void _init_vout(tcon_dev_t *pDev)
 
 static void _tcon_init(tcon_conf_t *pConf)
 {
+	logo_object_t  *init_logo_obj=NULL;
+
+	
 	_init_vout(pDev);
+	init_logo_obj = get_current_logo_obj();	
+	if(NULL==init_logo_obj ||!init_logo_obj->para.loaded)
     	_lcd_module_enable();
 }
 

@@ -373,5 +373,23 @@ source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
 source "drivers/misc/iwmc3200top/Kconfig"
+
+choice
+    prompt "Motion Processing Unit driver version"
+    depends on I2C
+    default MPU_NEW
+
+config MPU_PRE_V340
+    bool "MPU version < v3.4.0"
+    help
+      This is the MPU driver of version < v3.4.0
+
+config MPU_NEW
+    bool "MPU version >= v3.4.0"
+    help
+      This is the MPU driver of version >= v3.4.0.
+endchoice
+
 source "drivers/misc/mpu3050/Kconfig"
+source "drivers/misc/mpu3050_new/Kconfig"
 endif # MISC_DEVICES

@@ -28,12 +28,12 @@
 #include <linux/platform_device.h>
 #include <linux/vout/tcon.h>
 #include <linux/delay.h>
-
+#include <linux/logo/logo.h>
 #include <mach/gpio.h>
 #include <mach/am_regs.h>
 #include <mach/pinmux.h>
 #include <mach/power_gate.h>
-
+//INNOLUX AT070TN93 V.2
 #define LCD_WIDTH       800 
 #define LCD_HEIGHT      480
 #define MAX_WIDTH       1056
@@ -49,6 +49,7 @@ void power_off_backlight(void);
 #ifdef CONFIG_AM_LOGO
 static int bl_state = BL_ON;
 #endif
+
 
 static tcon_conf_t tcon_config =
 {
@@ -260,14 +261,20 @@ static void t13_power_off(void)
 
 static void t13_io_init(void)
 {
+    logo_object_t  *init_logo_obj=NULL;
+	
     printk("\n\nT13 LCD Init.\n\n");
+    init_logo_obj = get_current_logo_obj();	
+    if(NULL==init_logo_obj ||!init_logo_obj->para.loaded)
+    {
+	
+    	set_tcon_pinmux();
 
-    set_tcon_pinmux();
-
-    power_on_lcd();
+    	power_on_lcd();
 #ifndef CONFIG_AM_LOGO    
-    power_on_backlight();
-#endif    
+    	power_on_backlight();
+#endif
+    }
 }
 #ifdef CONFIG_AM_LOGO
 void Power_on_bl(void)

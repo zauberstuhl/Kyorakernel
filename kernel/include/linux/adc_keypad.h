@@ -15,6 +15,8 @@ struct adc_kp_platform_data{
 	
 	struct adc_key *key;
 	int key_num;
+	int repeat_delay;
+	int repeat_period;
 };
 
 #endif

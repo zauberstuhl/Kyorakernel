@@ -9,6 +9,7 @@
 #include <linux/gpio.h>
 #include <mach/irqs.h>
 #include <mach/wifi_tiwlan.h>
+#include <mach/card_io.h>
 
 static int amlogic_wifi_cd;	/* WIFI virtual 'card detect' status */
 static void (*wifi_status_cb) (int card_present, void *dev_id);
@@ -44,33 +45,11 @@ int amlogic_wifi_set_carddetect(int val)
 }
 
 static int amlogic_wifi_power_state;
+extern void extern_wifi_power(int is_power);
 
-//extern extern_wifi_power(on);
-//#include <linux/sn7325.h>
 int amlogic_wifi_power(int on)
-{
-	#if 0
-	if(on)
-	{
-		printk("##########Power on WiFi!###########\n");
-    	//set_gpio_val(GPIOD_bank_bit2_24(15), GPIOD_bit_bit2_24(15), 0);
-		//set_gpio_mode(GPIOD_bank_bit2_24(15), GPIOD_bit_bit2_24(15), GPIO_OUTPUT_MODE);
-		msleep(80);
-        configIO(0, 0);
-        setIO_level(0, 1, 5);
-        setIO_level(0, 1, 7);
-	}
-	else
-	{
-		printk("##########Cut off wifi power!###########\n");
-        configIO(0, 0);
-        setIO_level(0, 0, 5);
-        setIO_level(0, 0, 7);
-	}
-	#endif
-	//extern_wifi_power(on);
-	//gpio_set_value(PMENA_GPIO, on);
-
+{	
+	extern_wifi_power(on);
 	amlogic_wifi_power_state = on;
 	return 0;
 }

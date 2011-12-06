@@ -143,6 +143,9 @@ struct hci_dev {
 	struct rfkill		*rfkill;
 
 	struct module 		*owner;
+#ifdef CONFIG_BT_DEVICE
+    int inquiry_state;
+#endif
 
 	int (*open)(struct hci_dev *hdev);
 	int (*close)(struct hci_dev *hdev);

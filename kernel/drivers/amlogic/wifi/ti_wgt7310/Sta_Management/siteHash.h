@@ -144,6 +144,9 @@ typedef struct
     TI_UINT32           uWscIeSize; 			  /* Simple Config IE actual size (the part after the OUI) */
     char                siteMgrWSCProbeReqParams[DOT11_WSC_PROBE_REQ_MAX_LENGTH]; /* Contains the params to be used in the ProbeReq - WSC IE */ 
 
+	TI_UINT32           uProbeReqExtraIesLen;
+	TI_UINT8            probeReqExtraIes[MAX_BEACON_BODY_LENGTH];
+	
     TI_UINT8            includeWSCinProbeReq;
 } siteMgr_t;
 

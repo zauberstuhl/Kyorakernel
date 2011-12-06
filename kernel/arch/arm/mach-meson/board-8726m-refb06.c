@@ -208,20 +208,10 @@ static struct platform_device adc_ts_device = {
 #include <linux/adc_keypad.h>
 
 static struct adc_key adc_kp_key[] = {
-#if 1	// w10
-	{KEY_PAGEDOWN,		"vol-",	CHAN_4,	0, 60},	// 0v	102
-	{KEY_PAGEUP,		"vol+",	CHAN_4,	306, 60},	// 0v	28
-	{KEY_TAB,	             "exit",     CHAN_4,	602, 60},	// 0v	15
-	{KEY_LEFTMETA,		"menu",	CHAN_4,	760, 60},	// 0v	125
-#else // arm
-	{KEY_MENU,		"menu",	CHAN_4,	0, 60},	// 0v
-	{KEY_UP,			"up",		CHAN_4, 180, 60},	// 0.58v
-	{KEY_DOWN,		"down",	CHAN_4, 285, 60},	// 0.92v
-	{KEY_LEFT,		"left",	CHAN_4, 400, 60},	// 1.29v
-	{KEY_RIGHT,		"right",	CHAN_4, 505, 60},	// 1.63v
-	{KEY_EXIT,		"exit",	CHAN_4, 624, 60},	// 2.01v
-	{KEY_OK,		"ok",		CHAN_4, 850, 60},	// 2.74v
-#endif
+	{KEY_VOLUMEDOWN, "vol-",	CHAN_4,	0, 60},	// 0v	102
+	{KEY_VOLUMEUP,   "vol+",	CHAN_4,	306, 60},	// 0v	28
+	{KEY_BACK,       "exit",	CHAN_4,	602, 60},	// 0v	15
+	{KEY_MENU,       "menu",	CHAN_4,	760, 60},	// 0v	125
 };
 
 static struct adc_kp_platform_data adc_kp_pdata = {

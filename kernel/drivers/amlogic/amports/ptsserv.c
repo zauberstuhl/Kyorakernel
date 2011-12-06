@@ -48,9 +48,15 @@ typedef struct pts_table_s {
     int first_lookup_ok;
     int first_lookup_is_fail;    /* 1: first lookup fail;  0: first lookup success */
     pts_rec_t *pts_recs;
+	unsigned long *pages_list;
     struct list_head *pts_search;
     struct list_head valid_list;
     struct list_head free_list;
+#ifdef CALC_CACHED_TIME
+    u32 last_checkin_offset;
+    u32 last_checkin_pts;
+    u32 last_checkout_pts;
+#endif
 } pts_table_t;
 
 static spinlock_t lock = SPIN_LOCK_UNLOCKED;
@@ -138,6 +144,26 @@ static inline void get_rdpage_offset(u8 type, u32 *page, u32 *page_offset)
     }
 }
 
+#ifdef CALC_CACHED_TIME
+int pts_cached_time(u8 type)
+{
+    pts_table_t *pTable;
+
+    if (type >= PTS_TYPE_MAX) {
+        return 0;
+    }
+
+    pTable = &pts_table[type];
+
+    if((pTable->last_checkin_pts==-1) || (pTable->last_checkout_pts==-1))
+	    return 0;
+
+    return pTable->last_checkin_pts-pTable->last_checkout_pts;
+}
+
+EXPORT_SYMBOL(pts_cached_time);
+#endif
+
 int pts_checkin_offset(u8 type, u32 offset, u32 val)
 {
     ulong flags;
@@ -193,6 +219,16 @@ int pts_checkin_offset(u8 type, u32 offset, u32 val)
 
         rec->offset = offset;
         rec->val = val;
+
+#ifdef CALC_CACHED_TIME
+	{
+		s32 diff = offset-pTable->last_checkin_offset;
+		if(diff>0){
+			pTable->last_checkin_offset = offset;
+			pTable->last_checkin_pts    = val;
+		}
+	}
+#endif
 
         list_move_tail(&rec->list, &pTable->valid_list);
 
@@ -397,6 +433,10 @@ int pts_lookup_offset(u8 type, u32 offset, u32 *val, u32 pts_margin)
 #endif
             *val = p2->val;
 
+#ifdef CALC_CACHED_TIME
+	    pTable->last_checkout_pts = p2->val;
+#endif
+
             pTable->lookup_cache_pts = *val;
             pTable->lookup_cache_offset = offset;
             pTable->lookup_cache_valid = true;
@@ -512,6 +552,73 @@ int pts_set_rec_size(u8 type, u32 val)
 }
 
 EXPORT_SYMBOL(pts_set_rec_size);
+//#define SIMPLE_ALLOC_LIST
+static void free_pts_list(pts_table_t *pTable)
+{
+#ifdef SIMPLE_ALLOC_LIST
+	if(0){/*don't free,used a static memory*/
+		kfree(pTable->pts_recs);
+		pTable->pts_recs = NULL;
+	}
+#else
+	unsigned long *p=pTable->pages_list;
+	void *onepage=(void  *)p[0];
+	while(onepage!=NULL){
+		free_page(onepage);
+		p++;
+		onepage=(void  *)p[0];
+	}
+	if(pTable->pages_list)
+		kfree(pTable->pages_list);
+	pTable->pages_list=NULL;
+#endif
+	INIT_LIST_HEAD(&pTable->valid_list);
+	INIT_LIST_HEAD(&pTable->free_list);
+}
+
+static int alloc_pts_list(pts_table_t *pTable)
+{
+	int i;
+	int page_nums;
+	INIT_LIST_HEAD(&pTable->valid_list);
+	INIT_LIST_HEAD(&pTable->free_list);
+#ifdef SIMPLE_ALLOC_LIST
+	if (!pTable->pts_recs){
+		pTable->pts_recs = kcalloc(pTable->rec_num,
+							sizeof(pts_rec_t), GFP_KERNEL);
+	}
+	if (!pTable->pts_recs) {
+            pTable->status = 0;
+            return -ENOMEM;
+        }
+	for (i = 0; i < pTable->rec_num; i++)
+		list_add_tail(&pTable->pts_recs[i].list, &pTable->free_list);
+	return 0;
+#else
+	page_nums=pTable->rec_num*sizeof(pts_rec_t)/PAGE_SIZE;
+	if(PAGE_SIZE/sizeof(pts_rec_t)!=0){
+		page_nums=(pTable->rec_num+page_nums+1)*sizeof(pts_rec_t)/PAGE_SIZE;
+	}
+	pTable->pages_list=kzalloc(page_nums*4+4,GFP_KERNEL);
+	if(pTable->pages_list==NULL)
+		return -ENOMEM;
+	for(i=0;i<page_nums;i++)
+	{
+		int j;
+		void  *one_page=(void *)__get_free_page(GFP_KERNEL);
+		pts_rec_t *recs=one_page;
+		if(one_page==NULL)
+			goto error_alloc_pages;
+		for(j=0;j<PAGE_SIZE/sizeof(pts_rec_t);j++)
+			list_add_tail(&recs[j].list, &pTable->free_list);
+		pTable->pages_list[i]=(unsigned long)one_page;
+	}
+	return 0;
+error_alloc_pages:
+	free_pts_list(pTable);
+#endif
+	return -ENOMEM;
+}
 
 int pts_start(u8 type)
 {
@@ -532,14 +639,8 @@ int pts_start(u8 type)
 
         spin_unlock_irqrestore(&lock, flags);
 
-        if (!pTable->pts_recs) {
-            pTable->pts_recs = kcalloc(pTable->rec_num,
-                                       sizeof(pts_rec_t), GFP_KERNEL);
-        }
-
-        if (!pTable->pts_recs) {
-            pTable->status = 0;
-            return -ENOMEM;
+        if(alloc_pts_list(pTable)!=0){
+			return -ENOMEM;
         }
 
         if (type == PTS_TYPE_VIDEO) {
@@ -555,6 +656,7 @@ int pts_start(u8 type)
             //BUG_ON(pTable->buf_size <= 0x10000);
 
             WRITE_MPEG_REG(VIDEO_PTS, 0);
+            timestamp_pcrscr_set(0);//video always need the pcrscr,Clear it to use later
             pTable->first_checkin_pts = -1;
             pTable->first_lookup_ok = 0;
 	     pTable->first_lookup_is_fail = 0;
@@ -568,15 +670,14 @@ int pts_start(u8 type)
             WRITE_MPEG_REG(AUDIO_PTS, 0);
             pTable->first_checkin_pts = -1;
             pTable->first_lookup_ok = 0;
-	     pTable->first_lookup_is_fail = 0;
+	    pTable->first_lookup_is_fail = 0;
         }
 
-        INIT_LIST_HEAD(&pTable->valid_list);
-        INIT_LIST_HEAD(&pTable->free_list);
-
-        for (i = 0; i < pTable->rec_num; i++) {
-            list_add_tail(&pTable->pts_recs[i].list, &pTable->free_list);
-        }
+#ifdef CALC_CACHED_TIME
+	pTable->last_checkin_offset = 0;
+	pTable->last_checkin_pts    = -1;
+	pTable->last_checkout_pts   = -1;
+#endif
 
         pTable->pts_search = &pTable->valid_list;
         pTable->status = PTS_LOADING;
@@ -612,9 +713,8 @@ int pts_stop(u8 type)
 
         spin_unlock_irqrestore(&lock, flags);
 
-        INIT_LIST_HEAD(&pTable->valid_list);
-        INIT_LIST_HEAD(&pTable->free_list);
-
+        free_pts_list(pTable);
+		
         pTable->status = PTS_IDLE;
 
         if (type == PTS_TYPE_AUDIO) {
@@ -662,3 +762,4 @@ int first_pts_checkin_complete(u8 type)
         return 1;
 }
 EXPORT_SYMBOL(first_pts_checkin_complete);
+

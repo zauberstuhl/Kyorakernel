@@ -646,12 +646,10 @@ static int have_callable_console(void)
  *
  * See the vsnprintf() documentation for format string extensions over C99.
  */
-
 asmlinkage int printk(const char *fmt, ...)
 {
 	va_list args;
 	int r;
-
 	va_start(args, fmt);
 	r = vprintk(fmt, args);
 	va_end(args);
@@ -736,6 +734,17 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	int this_cpu;
 	char *p;
 
+#if defined(CONFIG_ARCH_MESON) || defined(CONFIG_ARCH_MESON3)
+{
+	unsigned long fiqflags;
+	raw_local_save_flags(fiqflags);
+	if((fiqflags &MODE_MASK) == FIQ_MODE  || (fiqflags &MODE_MASK)==FIQ26_MODE){
+		// in fiq mode,we can't handle printk.
+		int fiq_vprintk(const char *fmt, va_list args);
+		return fiq_vprintk(fmt,args);
+	}
+}
+#endif			
 	boot_delay_msec();
 	printk_delay();
 

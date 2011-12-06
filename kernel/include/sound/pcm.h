@@ -40,6 +40,11 @@
 /*
  *  Hardware (lowlevel) section
  */
+ 
+struct pcm_platform_data {
+    int (*is_hp_pluged)(void);
+    void (*mute_func)(int flag);
+};
 
 struct snd_pcm_hardware {
 	unsigned int info;		/* SNDRV_PCM_INFO_* */

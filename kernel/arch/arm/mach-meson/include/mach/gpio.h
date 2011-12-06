@@ -159,10 +159,11 @@ static inline unsigned char get_exgpio_port(gpio_bank_t bank)
 
 static inline int set_exgpio_mode(unsigned char port,int bit,gpio_mode_t mode)
 {
+    int bank_mode ;
     if( port == MAX_EXGPIO_BANK )
         return -1;
     
-    int bank_mode = get_configIO(port);
+    bank_mode = get_configIO(port);
     
     bank_mode &= ~(1 << bit);
     bank_mode |= mode << bit;

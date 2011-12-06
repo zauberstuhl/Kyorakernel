@@ -93,6 +93,7 @@ static DEFINE_MUTEX(jpegdec_module_mutex);
 static jpegdec_t *dec = NULL;
 static unsigned long pbufAddr;
 static unsigned long pbufSize;
+static jpegdec_mem_info_t jegdec_mem_info;
 
 static irqreturn_t jpegdec_isr(int irq, void *dev_id)
 {
@@ -474,7 +475,21 @@ static int amjpegdec_ioctl(struct inode *inode, struct file *file,
 
     case JPEGDEC_IOC_STAT:
         return dec->state;
+    case JPEGDEC_G_MEM_INFO:
+        if (copy_from_user(&jegdec_mem_info, (void __user *)arg, sizeof(jpegdec_mem_info_t))) {
+            r = -EFAULT;
+        } else {
+            unsigned pscaleCanvasbwidth = (jegdec_mem_info.angle & 1) ? jegdec_mem_info.dec_h : jegdec_mem_info.dec_w;
+            pscaleCanvasbwidth = (pscaleCanvasbwidth + 63) & (~63);
+            pscaleCanvasbwidth = pscaleCanvasbwidth * 2 * 128;
+            jegdec_mem_info.canv_addr = pscaleCanvasbwidth + pbufAddr;
+            jegdec_mem_info.canv_len  = pbufSize - pscaleCanvasbwidth;
 
+            if (copy_to_user((void __user *)arg, &jegdec_mem_info, sizeof(jpegdec_mem_info_t))) {
+                r = -EFAULT;
+            }
+        }
+        break;
     default:
         return -ENOIOCTLCMD;
     }
@@ -482,24 +497,49 @@ static int amjpegdec_ioctl(struct inode *inode, struct file *file,
     return r;
 }
 
+static int mmap(struct file *filp, struct vm_area_struct *vma)
+{
+    unsigned long off = vma->vm_pgoff << PAGE_SHIFT;
+    unsigned vm_size = vma->vm_end - vma->vm_start;
+
+    if (vm_size == 0) {
+        return -EAGAIN;
+    }
+    //printk("mmap:%x\n",vm_size);
+    off += jegdec_mem_info.canv_addr;
+
+    vma->vm_flags |= VM_RESERVED | VM_IO;
+
+    if (remap_pfn_range(vma, vma->vm_start, off >> PAGE_SHIFT,
+                        vma->vm_end - vma->vm_start, vma->vm_page_prot)) {
+        printk("set_cached: failed remap_pfn_range\n");
+        return -EAGAIN;
+    }
+    return 0;
+
+}
+
 const static struct file_operations amjpegdec_fops = {
     .owner    = THIS_MODULE,
     .open     = amjpegdec_open,
+    .mmap     = mmap,
     .release  = amjpegdec_release,
     .ioctl    = amjpegdec_ioctl,
 };
-
+int HWJPEGDEC_MAJOR = 0;
 static int amjpegdec_probe(struct platform_device *pdev)
 {
     int r;
     struct resource *s;
 
+    HWJPEGDEC_MAJOR = 0;
     r = register_chrdev(HWJPEGDEC_MAJOR, "amjpegdev", &amjpegdec_fops);
 
     if (r < 0) {
         pr_error("Can't register major for amjpegdec device\n");
         return r;
     }
+    HWJPEGDEC_MAJOR = r;
 
     amjpegdec_class = class_create(THIS_MODULE, DEVICE_NAME);
 

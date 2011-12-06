@@ -594,8 +594,9 @@ typedef struct{
         TI_BOOL                             bPrimarySiteHtSupport;
 
         /* WiFI SimpleConfig */
-		TWscMode 							siteMgrWSCMode; /* used to set the WiFi Simple Config mode */
-
+        TWscMode                			siteMgrWSCMode; /* used to set the WiFi Simple Config mode */ 
+        TI_UINT8                			*pProbeReqExtraIes;
+		
         /* SME SM section */
         TMacAddr                			smeDesiredBSSID;
         TSsid                   			smeDesiredSSID;

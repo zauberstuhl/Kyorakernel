@@ -78,10 +78,12 @@ void dvbt_get_test_out(u8 sel, u32 len, u32 *buf);
 void dvbc_enable_irq (int dvbc_irq);
 void dvbc_disable_irq(int dvbc_irq);
 void dvbc_isr(struct aml_demod_sta *demod_sta);
+int dvbc_isr_islock(void);
 
 void dvbt_enable_irq (int dvbt_irq);
 void dvbt_disable_irq(int dvbt_irq);
 void dvbt_isr(struct aml_demod_sta *demod_sta);
+int dvbt_isr_islock(void);
 
 int init_tuner_fj2207(struct aml_demod_sta *demod_sta, 
 		      struct aml_demod_i2c *adap);
@@ -94,6 +96,47 @@ int tuner_get_ch_power(struct aml_demod_i2c *adap);
 // i2c functions
 //int aml_i2c_sw_test_bus(struct aml_demod_i2c *adap, char *name);
 int am_demod_i2c_xfer(struct aml_demod_i2c *adap, struct i2c_msg *msgs, int num);
+
+struct dvb_tuner_info * tuner_get_info( int type, int mode);
+
+int  agc_power_to_dbm(int agc_gain, int ad_power, int offset, int tuner);
+
+struct agc_power_tab {
+	char name[128];
+	int level;
+	int ncalcE;
+	int *calcE;
+};
+struct agc_power_tab * tuner_get_agc_power_table(int type);
+
+struct demod_status_ops {
+	int (*get_status)(struct aml_demod_sta *demod_sta, 
+		struct aml_demod_i2c *demod_i2c);
+	int (*get_ber)(struct aml_demod_sta *demod_sta, 
+		struct aml_demod_i2c *demod_i2c);
+	int (*get_snr)(struct aml_demod_sta *demod_sta, 
+		struct aml_demod_i2c *demod_i2c);
+	int (*get_strength)(struct aml_demod_sta *demod_sta, 
+		struct aml_demod_i2c *demod_i2c);
+	int (*get_ucblocks)(struct aml_demod_sta *demod_sta, 
+		struct aml_demod_i2c *demod_i2c);
+};
+
+struct demod_status_ops* dvbt_get_status_ops(void);
+
+int dvbt_isr_monitor(void);
+int dvbt_isr_cancel(void);
+
+
+int dvbt_get_params(struct aml_demod_sta *demod_sta, 
+		      struct aml_demod_i2c *adap,
+		      	int  *code_rate_HP,  /* high priority stream code rate */
+			int  *code_rate_LP,  /* low priority stream code rate */
+			int  *constellation, /* modulation type (see above) */
+			int  *transmission_mode,
+			int  *guard_interval,
+			int  *hierarchy_information );
+int dvbt_shutdown(void);
 
 #endif
 

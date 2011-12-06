@@ -65,6 +65,9 @@
 #include "dwc_otg_regs.h"
 #include "dwc_otg_cil.h"
 
+#define dwc_wmb()	wmb()
+#define dwc_rmb()	rmb()
+
 /* ------------------------------------------------------- */
 /*
 	Tool functions
@@ -1719,7 +1722,7 @@ void dwc_otg_hc_start_transfer(dwc_otg_core_if_t * _core_if, dwc_hc_t * _hc)
 
 	if (_core_if->dma_enable) {
 		dwc_write_reg32(&hc_regs->hcdma, (uint32_t) _hc->xfer_buff);
-		wmb();
+		dwc_wmb();
 		//dma_cache_maint((unsigned long)_hc->xfer_buff,(unsigned long) _hc->xfer_len);
 	}
 
@@ -2184,6 +2187,7 @@ void dwc_otg_ep_start_transfer(dwc_otg_core_if_t * _core_if, dwc_ep_t * _ep)
 		if (_core_if->dma_enable) {
 			dwc_write_reg32(&in_regs->diepdma,
 					(uint32_t) _ep->xfer_buff);
+			dwc_wmb();
 		} else {
 			if (_core_if->en_multiple_tx_fifo == 0) {
 				intr_mask.b.nptxfempty = 1;
@@ -2215,6 +2219,7 @@ void dwc_otg_ep_start_transfer(dwc_otg_core_if_t * _core_if, dwc_ep_t * _ep)
 		if (_core_if->dma_enable) {
 			dwc_write_reg32(&out_regs->doepdma,
 					(uint32_t) _ep->xfer_buff);
+			dwc_wmb();
 		}
 	}
 	DWC_DEBUGPL(DBG_PCD, "DOEPCTL=%08x DOEPTSIZ=%08x\n",
@@ -2280,6 +2285,7 @@ void dwc_otg_ep_start_transfer(dwc_otg_core_if_t * _core_if, dwc_ep_t * _ep)
 		if (_core_if->dma_enable) {
 			dwc_write_reg32(&(in_regs->diepdma),
 					(uint32_t) _ep->dma_addr);
+			dwc_wmb();
 		} else {
 			if (_ep->type != DWC_OTG_EP_TYPE_ISOC) {
 				/** 
@@ -2352,6 +2358,7 @@ void dwc_otg_ep_start_transfer(dwc_otg_core_if_t * _core_if, dwc_ep_t * _ep)
 		if (_core_if->dma_enable) {
 			dwc_write_reg32(&(out_regs->doepdma),
 					(uint32_t) _ep->dma_addr);
+			dwc_wmb();
 		}
 
 		if (_ep->type == DWC_OTG_EP_TYPE_ISOC) {
@@ -2460,6 +2467,7 @@ void dwc_otg_ep0_start_transfer(dwc_otg_core_if_t * _core_if, dwc_ep_t * _ep)
 		if (_core_if->dma_enable) {
 			dwc_write_reg32(&(in_regs->diepdma),
 					(uint32_t) _ep->dma_addr);
+			dwc_wmb();
 		}
 
 		/* EP enable, IN data in FIFO */
@@ -2521,6 +2529,7 @@ void dwc_otg_ep0_start_transfer(dwc_otg_core_if_t * _core_if, dwc_ep_t * _ep)
 		if (_core_if->dma_enable) {
 			dwc_write_reg32(&(out_regs->doepdma),
 					(uint32_t) _ep->dma_addr);
+			dwc_wmb();
 		}
 
 		/* EP enable */

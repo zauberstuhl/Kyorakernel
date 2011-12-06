@@ -98,19 +98,25 @@ static ssize_t _esparser_write(const char __user *buf, size_t count, u32 type)
     u32 len = 0;
     u32 parser_type;
     int ret;
-
+    u32 wp,wp_reg;
+	
     if (type == BUF_TYPE_VIDEO) {
+		wp_reg=VLD_MEM_VIFIFO_WP;
+		
         parser_type = PARSER_VIDEO;
     } else if (type == BUF_TYPE_AUDIO) {
+   	 	wp_reg=AIU_MEM_AIFIFO_MAN_WP;
         parser_type = PARSER_AUDIO;
     } else {
+    	wp_reg=PARSER_SUB_START_PTR;
         parser_type = PARSER_SUBPIC;
     }
-
+	wp=READ_MPEG_REG(wp_reg);
     if (r > 0) {
         len = min(r, (size_t)FETCHBUF_SIZE);
 
         copy_from_user(fetchbuf_remap, p, len);
+	wmb();
         // reset the Write and read pointer to zero again
         WRITE_MPEG_REG(PFIFO_RD_PTR, 0);
         WRITE_MPEG_REG(PFIFO_WR_PTR, 0);
@@ -133,8 +139,12 @@ static ssize_t _esparser_write(const char __user *buf, size_t count, u32 type)
         ret = wait_event_interruptible_timeout(wq, search_done != 0, HZ/10);
         if (ret == 0) {
             WRITE_MPEG_REG(PARSER_FETCH_CMD, 0);
-			printk("write timeout, retry\n");
-            return -EAGAIN;
+	    printk("esparser write timeout\n");
+	    if(wp==READ_MPEG_REG(wp_reg))/*no data fetched*/
+            	return -EAGAIN;
+	    else{
+		printk("write timeout, but fetched ok,len=%d,wpdiff=%d\n",len,wp-(u32)READ_MPEG_REG(wp_reg));
+	    }
         } else if (ret < 0) {
             return -ERESTARTSYS;
         }

@@ -26,7 +26,7 @@
 	int code_mem_size;
 	struct mail_msg *mailbox_reg;
 	struct mail_msg *mailbox_reg2;
-	
+	struct dsp_working_info *dsp_work_details;
 	unsigned long dsp_code_start;
 	unsigned long dsp_code_size;
 	unsigned long dsp_stack_start;
@@ -46,7 +46,7 @@
 	int last_stream_fmt;
 	struct frame_fmt frame_format;
 	struct frame_info cur_frame_info;
-	int last_valid_pts;
+	unsigned int last_valid_pts;
 	int out_len_after_last_valid_pts;
 	int decode_error_count;
 	int decode_fatal_err;
@@ -55,6 +55,7 @@
 	int stream_buffer_mem_size;
 	int decoded_nb_frames;
 	int first_lookup_over;
+	int format_wait_count;
 	unsigned long stream_buffer_start;
 	unsigned long stream_buffer_end;
 	unsigned long stream_buffer_size;	

@@ -46,6 +46,7 @@ struct mtd_blktrans_ops {
 	int blkshift;
 
 	/* Access functions */
+	void (*update_blktrans_sysinfo)(struct mtd_blktrans_dev *dev, unsigned int cmd, unsigned long arg);	
 	int (*do_blktrans_request)(struct mtd_blktrans_ops *tr, struct mtd_blktrans_dev *dev, struct request *req);			//for nftl could do much requests once a time not just 1page a time
 
 	int (*readsect)(struct mtd_blktrans_dev *dev,

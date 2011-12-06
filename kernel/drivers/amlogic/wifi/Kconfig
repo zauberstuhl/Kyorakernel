@@ -65,22 +65,28 @@ config BCM4329_NVRAM_PATH
 	---help---
 	  Path to nvram file.
 
-config RTL8712_8188_8191_8192SU_USB_WIFI
-	tristate "Realtek 8712 8188 8191 8192SU Wireless USB Dongle support"
+config RTL8XXX_SU_USB_WIFI
+	tristate "Realtek SU series (8712 8188 8191 8192SU) Wireless USB Dongle support"
 	default n
 	depends on MAC80211 && USB
 	---help---
 	  This module adds support for wireless USB dongle based on
 	  Realtek 8712 8188 8191 8192SU chipset.
 
-config RTL8192CU_USB_WIFI
-	tristate "Realtek 8192CU Wireless USB Dongle support"
+config RTL8XXX_CU_USB_WIFI
+	tristate "Realtek CU series (8192 8188CU) Wireless USB Dongle support"
 	default n
 	depends on MAC80211 && USB
 	---help---
 	  This module adds support for wireless USB dongle based on
 	  Realtek 8192CU chipset.
-
+config RTL8XXX_CU_EXT_POWER_CTRL
+	bool "Realtek CU series (8192 8188CU) Wireless USB Dongle power control"
+	default n
+	depends on RTL8XXX_CU_USB_WIFI
+	---help---
+	  This config adds support for controlling power of Realtek 8xxxCU series,need define function extern_usb_wifi_power() in bsp first.
+	  
 config SDIO_ATHEROS_6302_WIFI
 	bool "ATHEROS 6302 wireless cards support"
 	depends on SD_MMC
@@ -221,7 +227,7 @@ config MRVLNH387_STA_SUPPORT
 config MRVLNH387_UAP_SUPPORT
 	depends on SDIO_MARVELL_NH387_WIFI
 	bool "Enable AP mode support"
-	default y
+	default n
 		---help---
 	  Enable AP mode support.
 config MRVLNH387_REASSOCIATION
@@ -264,7 +270,7 @@ endif
 
 config SDIO_TI_WIFI_WGT7310
 	tristate "Ti wgt7310 wireless cards support"
-	default m
+	default n
 	depends on SD_MMC
 	select WIRELESS_EXT
 	select WEXT_PRIV
@@ -274,5 +280,93 @@ config SDIO_TI_WIFI_WGT7310
 
           & assure to set these config in 
 	  Device Drivers  ---> Generic Driver Options  ---> 
+
+config RALINK_3070_USB_WIFI
+	tristate "Ralink RT3070 wireless USB Dongle support"
+	depends on USB
+	---help---
+	This module adds support for wireless USB dongle based on ralink 3070 chipset.
+	
+	This driver uses the kernel's wireless extensions subsystem.
+	You should add RALINK 3070 configuration file in directory firmware/ralink/3070/
+	
+	    & assure to set these config in 
+	Device Drivers  ---> Generic Driver Options  ---> 
+	
+	[*]   Include in-kernel firmware blobs in kernel binary  
+	    (ralink/3070/RT2870STA.dat) External firmware blobs to build into 	  
+	  	  	  
+config RALINK_3070_PROFILE_FILE
+	depends on RALINK_3070_USB_WIFI
+	string "RALINK_3070 PROFILE_FILE path"
+	default "ralink/3070/RT2870STA.dat"
+	---help---
+	  Path to the configuration file.
    
+config SDIO_DHD_CDC_WIFI_4319_MODULE
+	tristate "Broadcom 4319 wireless cards support"
+	depends on SD_MMC
+	select WIRELESS_EXT
+	select WEXT_PRIV
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4319 chipset.
+
+	  
+config SDIO_DHD_CDC_WIFI_4329_MODULE
+	tristate "Broadcom 4329 wireless cards support"
+	depends on SD_MMC
+	select WIRELESS_EXT
+	select WEXT_PRIV
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4329 chipset.
+
+config BCM4329_WIFI_CONTROL_FUNC
+	bool "Use bcm4329_wlan device"
+	depends on SDIO_DHD_CDC_WIFI_4329_MODULE
+	default n
+	---help---
+	   Use this option to get various parameters from architecture specific
+	   bcm4329_wlan platform device. Say n if unsure.
+
+#if BCM4329_WIFI_CONTROL_FUNC
+
+#config BCM4329_DHD_USE_STATIC_BUF
+#	bool "Use static buffer"
+#	depends on SDIO_DHD_CDC_WIFI_4329_MODULE
+#	default n
+#	---help---
+#	   Use static buffer from kernel heap allocated during bcm4329_wlan
+#	   platform device creation.
+
+config BCM4329_HW_OOB
+	bool "Use out of band interrupt"
+	depends on SDIO_DHD_CDC_WIFI_4329_MODULE
+	default n
+	---help---
+	   Use out of band interrupt for wake on wireless.
+
+config BCM4329_OOB_INTR_ONLY
+	bool "Use out of band interrupt only"
+	depends on SDIO_DHD_CDC_WIFI_4329_MODULE
+	default n
+	---help---
+	   Use out of band interrupt for all interrupts(including SDIO interrupts).
+
+config SDIO_BCM4330_WIFI
+	tristate "Broadcom 4330 wireless cards support"
+	depends on SD_MMC
+	select WIRELESS_EXT
+	select WEXT_PRIV
+	default n
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom 4330 chipset(include huawei43326 wifi only).
+
+	  This driver uses the kernel's wireless extensions subsystem.
+
+	  If you choose to build a module, it'll be called dhd. Say M if
+	  unsure.
+	      
 endmenu

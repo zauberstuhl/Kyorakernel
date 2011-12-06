@@ -69,7 +69,7 @@
 
 /* Note: put here and not in txCtrl.h to avoid warning in the txCtrl submodules that include txCtrl.h */ 
  
-static void   txCtrl_TxCompleteCb (TI_HANDLE hTxCtrl, TxResultDescriptor_t *pTxResultInfo);
+static TI_BOOL txCtrl_TxCompleteCb (TI_HANDLE hTxCtrl, TxResultDescriptor_t *pTxResultInfo);
 static void   txCtrl_BuildDataPkt (txCtrl_t *pTxCtrl, TTxCtrlBlk *pPktCtrlBlk,
                                    TI_UINT32 uAc, TI_UINT32 uBackpressure);
 static void	  txCtrl_BuildMgmtPkt (txCtrl_t *pTxCtrl, TTxCtrlBlk *pPktCtrlBlk, TI_UINT32 uAc);
@@ -601,7 +601,7 @@ void txCtrl_FreePacket (TI_HANDLE hTxCtrl, TTxCtrlBlk *pPktCtrlBlk, TI_STATUS eS
 *		    pTxResultInfo - The packet's Tx result information.   
 *              
 *************************************************************************/
-static void txCtrl_TxCompleteCb (TI_HANDLE hTxCtrl, TxResultDescriptor_t *pTxResultInfo)
+static TI_BOOL txCtrl_TxCompleteCb (TI_HANDLE hTxCtrl, TxResultDescriptor_t *pTxResultInfo)
 {
     txCtrl_t    *pTxCtrl = (txCtrl_t *)hTxCtrl;
 	TTxCtrlBlk  *pPktCtrlBlk;
@@ -619,7 +619,7 @@ static void txCtrl_TxCompleteCb (TI_HANDLE hTxCtrl, TxResultDescriptor_t *pTxRes
 	{
 TRACE2(pTxCtrl->hReport, REPORT_SEVERITY_ERROR, "txCtrl_TxCompleteCb(): Pkt already free!!, DescID=%d, AC=%d\n", pTxResultInfo->descID, ac);
 		CL_TRACE_END_L3("tiwlan_drv.ko", "INHERIT", "TX_Cmplt", "");
-		return;
+		return TI_FALSE;
 	}
 TRACE3(pTxCtrl->hReport, REPORT_SEVERITY_INFORMATION, "txCtrl_TxCompleteCb(): Pkt Tx Complete, DescID=%d, AC=%d, Status=%d\n", pTxResultInfo->descID, ac, pTxResultInfo->status);
 #endif
@@ -655,6 +655,7 @@ TRACE3(pTxCtrl->hReport, REPORT_SEVERITY_INFORMATION, "txCtrl_TxCompleteCb(): Pk
     txCtrl_FreePacket (pTxCtrl, pPktCtrlBlk, TI_OK);
 
 	CL_TRACE_END_L3("tiwlan_drv.ko", "INHERIT", "TX_Cmplt", "");
+	return TI_TRUE;
 }
 
 
@@ -918,7 +919,7 @@ static void txCtrl_BuildMgmtPkt (txCtrl_t *pTxCtrl, TTxCtrlBlk *pPktCtrlBlk, TI_
 	{
         uHdrAlignPad = txCtrl_BuildDataPktHdr ((TI_HANDLE)pTxCtrl, pPktCtrlBlk, ACK_POLICY_LEGACY);
 
-		uRatePolicy = pTxCtrl->dataRatePolicy[uAc];
+		uRatePolicy = pTxCtrl->mgmtRatePolicy[uAc];
 	}
 
 	/*  Other types are already in WLAN format so copy header from Wbuf to Ctrl-Blk. */

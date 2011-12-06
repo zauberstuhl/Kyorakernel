@@ -1,12 +1,12 @@
-
+if MPU_PRE_V340
 menu "Motion Sensors Support"
 
 choice
-    tristate "Motion Processing Unit"
+    tristate "Motion Processing Unit (version < v3.4.0)"
     depends on I2C
-    default MPU_NONE
+    default MPU_PRE_V340_NONE
 
-config MPU_NONE
+config MPU_PRE_V340_NONE
     bool "None"
     help
       This disables support for motion processing using the MPU family of 
@@ -166,4 +166,4 @@ config SENSORS_MPU_DEBUG
       and other slave sensors.
 
 endmenu
-
+endif # MPU_PRE_V340

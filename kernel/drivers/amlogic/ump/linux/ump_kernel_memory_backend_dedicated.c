@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 ARM Limited. All rights reserved.
+ * Copyright (C) 2010-2011 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -92,7 +92,7 @@ ump_memory_backend * ump_block_allocator_create(u32 base_address, u32 size)
 				allocator->num_blocks = num_blocks;
 				allocator->num_free = num_blocks;
 				allocator->base = base_address;
-				init_MUTEX(&allocator->mutex);
+				sema_init(&allocator->mutex, 1);
 
 				for (i = 0; i < num_blocks; i++)
 				{

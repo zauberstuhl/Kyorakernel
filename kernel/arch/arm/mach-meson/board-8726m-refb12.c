@@ -168,11 +168,11 @@ static struct platform_device adc_ts_device = {
 #include <linux/adc_keypad.h>
 
 static struct adc_key adc_kp_key[] = {
-    {KEY_LEFTMETA,          "menu", CHAN_4, 0, 60},		//0v
-    {KEY_PAGEDOWN,          "vol-", CHAN_4, 180, 60},	//0.58
-    {KEY_PAGEUP,            "vol+", CHAN_4, 398, 60},		//1.286
-    {KEY_TAB,               "exit", CHAN_4, 623, 60},		//2.01
-    {KEY_HOME,              "home", CHAN_4, 849, 60},	//2.74
+    {KEY_MENU,          "menu", CHAN_4, 0, 60},		//0v
+    {KEY_VOLUMEDOWN,    "vol-", CHAN_4, 180, 60},	//0.58
+    {KEY_VOLUMEUP,      "vol+", CHAN_4, 398, 60},		//1.286
+    {KEY_BACK,          "exit", CHAN_4, 623, 60},		//2.01
+    {KEY_HOME,          "home", CHAN_4, 849, 60},	//2.74
 };
 
 static struct adc_kp_platform_data adc_kp_pdata = {
@@ -863,12 +863,16 @@ int gc0308_init(void)
    #ifdef CONFIG_SN7325
 	printk( "amlogic camera driver 0308: init CONFIG_SN7325. \n");
 	configIO(1, 0);
+	setIO_level(1, 1, 4);//500m PWR_Down
+	msleep(10);
+	configIO(1, 0);
 	setIO_level(1, 1, 0);//30m PWR_Down
 	//configIO(0, 0);
 	//setIO_level(0, 1, 7);//500m PWR_Down
-	msleep(300);
+	msleep(10);
 	configIO(1, 0);
 	setIO_level(1, 0, 0);//30m PWR_On
+	msleep(20);
     #endif
 }
 #endif
@@ -880,13 +884,11 @@ int ov5642_init(void)
    #ifdef CONFIG_SN7325
 	printk( "amlogic camera driver 5642: init CONFIG_SN7325. \n");
 	configIO(0, 0);
-	setIO_level(0, 1, 7);//500m PWR_Down
-	msleep(300);
-	configIO(0, 0);
 	setIO_level(0, 0, 7);//500m PWR_On/**/
-	
-	printk( "heming add setIO_level od7 0, 0, 7\n");
-	msleep(300);
+	msleep(10);
+	configIO(1, 0);
+	setIO_level(1, 1, 4);//500m PWR_Down
+	msleep(10);
     #endif
 }
 #endif
@@ -990,7 +992,7 @@ static struct meson_pm_config aml_pm_pdata = {
     .pctl_reg_base = IO_APB_BUS_BASE,
     .mmc_reg_base = APB_REG_ADDR(0x1000),
     .hiu_reg_base = CBUS_REG_ADDR(0x1000),
-    .power_key = (1<<8),
+    .power_key = CBUS_REG_ADDR(RTC_ADDR1),
     .ddr_clk = 0x00110820,
     .sleepcount = 128,
     .set_vccx2 = set_vccx2,
@@ -1109,6 +1111,11 @@ static void set_charge(int flags)
         setIO_level(1, 1, 3);
         #endif
         }
+        printk( "#########amlogic camera driver 5642##########. \n");
+        configIO(1, 0);
+	setIO_level(1, 0, 4);//500m PWR_Down
+	configIO(0, 0);
+	setIO_level(0, 1, 7);//500m PWR_Down
 }
 
 #ifdef CONFIG_SARADC_AM
@@ -1277,7 +1284,6 @@ static struct aml_power_pdata power_pdata = {
 	.bat_charge_value_table = bat_charge_value_table,
 	.bat_level_table = bat_level_table,
 	.bat_table_len = 37,		
-	.is_support_usb_charging = 0,
 	//.supplied_to = supplicants,
 	//.num_supplicants = ARRAY_SIZE(supplicants),
 };
@@ -1469,12 +1475,12 @@ static struct mtd_partition multi_partition_info[] =
 	{
 		.name = "userdata",
 		.offset = 384*1024*1024,
-		.size = 256*1024*1024,
+		.size = 1024*1024*1024,
 	},
 	{
 		.name = "NFTL_Part",
-		.offset = ((384 + 256)*1024*1024),
-		.size = ((0x200000000 - (384 + 256)*1024*1024)),
+		.offset = ((384 + 1024)*1024*1024),
+		.size = ((0x200000000 - (384 + 1024)*1024*1024)),
 	},
 };
 
@@ -1742,8 +1748,8 @@ static struct platform_device bt_device = {
 static void bt_device_init(void)
 {
     //set clk for wifi, only for refb12
-    SET_CBUS_REG_MASK(PERIPHS_PIN_MUX_8, (1<<18));
-    CLEAR_CBUS_REG_MASK(PREG_EGPIO_EN_N, (1<<4));
+    //SET_CBUS_REG_MASK(PERIPHS_PIN_MUX_8, (1<<18));
+    //CLEAR_CBUS_REG_MASK(PREG_EGPIO_EN_N, (1<<4));
         
     CLEAR_CBUS_REG_MASK(PERIPHS_PIN_MUX_12, (1<<29));
 	CLEAR_CBUS_REG_MASK(PERIPHS_PIN_MUX_12, (1<<22));
@@ -1787,23 +1793,23 @@ static void bt_device_init(void)
 	CLEAR_CBUS_REG_MASK(PERIPHS_PIN_MUX_5, (1<<8));
 	CLEAR_CBUS_REG_MASK(PERIPHS_PIN_MUX_8, (1<<24));
 	
-	/* WLBT_REGON */
-//	CLEAR_CBUS_REG_MASK(PREG_GGPIO_EN_N, (1<<18));
-//	SET_CBUS_REG_MASK(PREG_GGPIO_O, (1<<18));
-	    //configIO(0, 0);
-        //setIO_level(0, 1, 5);	
+	/* WIFI/BT_EN */
+	//CLEAR_CBUS_REG_MASK(PREG_GGPIO_EN_N, (1<<18)); //       configIO(0, 0);
+	//SET_CBUS_REG_MASK(PREG_GGPIO_O, (1<<18));      //       setIO_level(0, 1, 5);	
+	//CLEAR_CBUS_REG_MASK(PREG_GGPIO_O, (1<<18));  //WA 7W WIFI/BT_EN  low level.
+
 	
-	/* reset */
+	/* BT_RST_N */
 	CLEAR_CBUS_REG_MASK(PREG_GGPIO_EN_N, (1<<12));
 	CLEAR_CBUS_REG_MASK(PREG_GGPIO_O, (1<<12));	
 	msleep(200);	
 	SET_CBUS_REG_MASK(PREG_GGPIO_O, (1<<12));	
 	
-	/* BG/GPS low */
+	/* UART_TX */
 	CLEAR_CBUS_REG_MASK(PREG_GGPIO_EN_N, (1<<19));
 	CLEAR_CBUS_REG_MASK(PREG_GGPIO_O, (1<<19));	
 	
-	/* UART RTS */
+	/* UART_CTS_N */
 	CLEAR_CBUS_REG_MASK(PREG_GGPIO_EN_N, (1<<16));
     CLEAR_CBUS_REG_MASK(PREG_GGPIO_O, (1<<16));
 		
@@ -2033,6 +2039,9 @@ static void __init eth_pinmux_init(void)
 static void __init device_pinmux_init(void )
 {
     clearall_pinmux();
+    //set clk for wifi, only for refb12
+    SET_CBUS_REG_MASK(PERIPHS_PIN_MUX_8, (1<<18));
+    CLEAR_CBUS_REG_MASK(PREG_EGPIO_EN_N, (1<<4));
     /*other deivce power on*/
     /*GPIOA_200e_bit4..usb/eth/YUV power on*/
     set_gpio_mode(PREG_EGPIO,1<<4,GPIO_OUTPUT_MODE);
@@ -2095,6 +2104,7 @@ static __init void m1_init_machine(void)
     meson_cache_init();
 
     power_hold();
+    pm_power_off = set_bat_off;
     device_clk_setting();
     device_pinmux_init();
 #ifdef CONFIG_VIDEO_AMLOGIC_CAPTURE

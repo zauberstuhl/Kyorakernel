@@ -208,7 +208,8 @@ tmErrorCode_t UserWrittenWait(tmUnitSelect_t tUnit, UInt32 tms)
 {
     tmErrorCode_t err = TM_OK;
 
-    mdelay(tms);
+    //mdelay(tms);
+    msleep(tms);
 
     return err;
 }

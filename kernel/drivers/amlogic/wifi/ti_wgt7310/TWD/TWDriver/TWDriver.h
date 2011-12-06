@@ -302,7 +302,7 @@
 /* TX_POWER is in Dbm/10 units */
 #define MAX_TX_POWER					250 
 #define MIN_TX_POWER					0   
-#define DEF_TX_POWER					205   
+#define DEF_TX_POWER					185   
 
 
 #define MIN_DEFAULT_KEY_ID              0
@@ -2761,8 +2761,8 @@ typedef struct
     TScanSrvInitParams                  tScanSrv;			 /**< Scan Service Initialization Parameters    */
     TArpIpFilterInitParams              tArpIpFilter;		 /**< ARP IP filter Initialization Parameters	*/
     TMacAddrFilterInitParams            tMacAddrFilter;		 /**< MAC Address Initialization Parameters		*/
-    IniFileRadioParam                   tIniFileRadioParams; /**< Radio Initialization Parameters   		*/
-	IniFileExtendedRadioParam			tIniFileExtRadioParams; /**< Radio Initialization Parameters   		*/
+    IniFileRadioParam                   tIniFileRadioParams[NUMBER_OF_FEM_TYPES_E]; /**< Radio Initialization Parameters   		*/
+	IniFileExtendedRadioParam			tIniFileExtRadioParams[NUMBER_OF_FEM_TYPES_E]; /**< Radio Initialization Parameters   		*/
     IniFileGeneralParam                 tPlatformGenParams;  /**< Radio Initialization Parameters           */
 	RateMangeParams_t					tRateMngParams;			  
     DcoItrimParams_t                    tDcoItrimParams;     /**< Dco Itrim Parameters                      */

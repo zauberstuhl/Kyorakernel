@@ -228,6 +228,27 @@ static void print_active_locks(int type)
 	}
 }
 
+long is_wake_lock_locked(int type, char *name)
+{
+	struct wake_lock *lock, *n;
+	long timeout = 0;
+
+	BUG_ON(type >= WAKE_LOCK_TYPE_COUNT);
+	list_for_each_entry_safe(lock, n, &active_wake_locks[type], link) {
+		if (!strcmp(lock->name, name)){
+    		if (lock->flags & WAKE_LOCK_AUTO_EXPIRE) {
+    			timeout = lock->expires - jiffies;
+    			if (timeout > 0)
+    				return 1;
+    		} else {
+                return 1;
+    		}
+    	}
+	}
+	return 0;
+}
+EXPORT_SYMBOL(is_wake_lock_locked);
+
 static long has_wake_lock_locked(int type)
 {
 	struct wake_lock *lock, *n;
@@ -288,7 +309,7 @@ static void suspend(struct work_struct *work)
 	if (current_event_num == entry_event_num) {
 		if (debug_mask & DEBUG_SUSPEND)
 			pr_info("suspend: pm_suspend returned with no event\n");
-		wake_lock_timeout(&unknown_wakeup, HZ / 2);
+		wake_lock_timeout(&unknown_wakeup, 2 * HZ );
 	}
 }
 static DECLARE_WORK(suspend_work, suspend);

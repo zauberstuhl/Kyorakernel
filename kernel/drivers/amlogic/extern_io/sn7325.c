@@ -1,4 +1,4 @@
-/* 
+/*
  * sn7325 i2c interface
  * Copyright (C) 2010 Amlogic, Inc.
  *
@@ -17,7 +17,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  *
  * Author:  wang han<han.wang@amlogic.com>
- */  
+ */
 
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -40,6 +40,8 @@
 
 static struct i2c_client *sn7325_client;
 
+static ssize_t write_sn7325(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+static DEVICE_ATTR(write, S_IRWXUGO, 0, write_sn7325);
 static int sn7325_i2c_read(unsigned char *buff, unsigned len)
 {
     int res = 0;
@@ -97,7 +99,7 @@ static int sn7325_probe(struct i2c_client *client, const struct i2c_device_id *i
     }
     sn7325_client = client;
     pdata = client->dev.platform_data;
-    
+
     if (pdata->pwr_rst)
     {
         pdata->pwr_rst();
@@ -107,6 +109,12 @@ static int sn7325_probe(struct i2c_client *client, const struct i2c_device_id *i
     {
         printk("***sn7325 no reset***\n");
     }
+struct class_device *class_simple_device_add();
+	res = sysfs_create_file(&client->dev.kobj, &dev_attr_write.attr);
+	if (res) {
+		printk("%s: create device attribute file failed\n",__FUNCTION__);
+		goto out;
+	}
 
 out:
     return res;
@@ -114,6 +122,9 @@ out:
 
 static int sn7325_remove(struct i2c_client *client)
 {
+	int ret = 0;
+	sysfs_remove_file(&client->dev.kobj, &dev_attr_write.attr);
+
     return 0;
 }
 
@@ -245,6 +256,36 @@ int setIO_level(unsigned char port, unsigned char iobits, unsigned char offset)
     return res;
 }
 
+static ssize_t write_sn7325(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	char i = 0,len = 0,*pin,*addr,*val,sep = ' ',*temp;
+	unsigned char port,iobits,offset;
+	printk("buf=%s\n",buf);
+	temp = buf;
+	pin = strsep(&temp,&sep);
+	addr = strsep(&temp,&sep);
+	val = temp;
+	printk("pin=%s,addr=%s,val=%s\n",pin,addr,val);
+	if(strcasecmp(pin,"OD") == 0)
+		port = 0;
+	else if(strcasecmp(pin,"PP") == 0)
+		port = 1;
+	else
+	{
+		printk("%s write error!pin=%s\n",__FUNCTION__,pin);
+		return -1;
+	}
+	iobits = (unsigned char)simple_strtoul(val,NULL,0);
+	offset = (unsigned char)simple_strtoul(addr,NULL,0);
+	if((iobits != 0 && iobits!=1)||(offset < 0) ||(offset > 7))
+	{
+		printk("%s write error!iobits=%d,offset=%d\n",__FUNCTION__,iobits,offset);
+		return -1;
+	}
+	configIO(port,0);
+	setIO_level(port,iobits,offset);
+	return count;
+}
 
 EXPORT_SYMBOL_GPL(configIO);
 EXPORT_SYMBOL_GPL(setIO_level);

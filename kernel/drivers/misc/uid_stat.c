@@ -76,11 +76,12 @@ static struct uid_stat *get_uid_stat(uid_t uid) {
 			return uid_entry;
 		}
 	}
-	spin_unlock_irqrestore(&uid_lock, flags);
 
 	/* Create a new entry for tracking the specified uid. */
-	if ((new_uid = kmalloc(sizeof(struct uid_stat), GFP_KERNEL)) == NULL)
+	if ((new_uid = kmalloc(sizeof(struct uid_stat), GFP_KERNEL)) == NULL) {
+		spin_unlock_irqrestore(&uid_lock, flags);
 		return NULL;
+	}
 
 	new_uid->uid = uid;
 	/* Counters start at INT_MIN, so we can track 4GB of network traffic. */
@@ -94,9 +95,7 @@ static struct uid_stat *get_uid_stat(uid_t uid) {
 	atomic_set(&new_uid->udp_rcv_pkt, INT_MIN);
 
 	/* Append the newly created uid stat struct to the list. */
-	spin_lock_irqsave(&uid_lock, flags);
 	list_add_tail(&new_uid->link, &uid_list);
-	spin_unlock_irqrestore(&uid_lock, flags);
 
 	sprintf(uid_s, "%d", uid);
 	proc_entry = proc_mkdir(uid_s, parent);
@@ -126,6 +125,7 @@ static struct uid_stat *get_uid_stat(uid_t uid) {
 	create_proc_read_entry("udp_rcv_pkt", S_IRUGO, proc_entry, read_proc_entry,
 			(void *) &new_uid->udp_rcv_pkt);
 
+	spin_unlock_irqrestore(&uid_lock, flags);
 	return new_uid;
 }
 

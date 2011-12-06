@@ -55,15 +55,14 @@ MODULE_AMLOG(AMLOG_DEFAULT_LEVEL, 0xff, LOG_LEVEL_DESC, LOG_MASK_DESC);
 
 static  void  set_power_led_onoff(char *onoff)// 1:on; 0:off
 {
-	/*
     if(0 == strcmp(onoff,"powerkey led on")) {//led on
-        set_gpio_val(GPIOD_bank_bit2_24(14), GPIOD_bit_bit2_24(14), 1);
-        set_gpio_mode(GPIOD_bank_bit2_24(14), GPIOD_bit_bit2_24(14), GPIO_OUTPUT_MODE);
+        set_gpio_val(GPIOD_bank_bit2_24(23), GPIOD_bit_bit2_24(23), 1);
+        set_gpio_mode(GPIOD_bank_bit2_24(23), GPIOD_bit_bit2_24(23), GPIO_OUTPUT_MODE);
     }
     else{
-    	set_gpio_val(GPIOD_bank_bit2_24(14), GPIOD_bit_bit2_24(14), 0);
-    	set_gpio_mode(GPIOD_bank_bit2_24(14), GPIOD_bit_bit2_24(14), GPIO_OUTPUT_MODE);
-    }*/
+    	set_gpio_val(GPIOD_bank_bit2_24(23), GPIOD_bit_bit2_24(23), 0);
+    	set_gpio_mode(GPIOD_bank_bit2_24(23), GPIOD_bit_bit2_24(23), GPIO_OUTPUT_MODE);
+    }
 }
 
 
@@ -145,12 +144,16 @@ static  inline int _gpio_bank_write(cmd_t  *op)
 }
 static inline int _gpio_bank_read(cmd_t  *op)
 {
+	u32 write_bit = op->bit;
+	char bank = op->bank;
+
 	if (0 > _gpio_setup_bank_bit(op) ) return -1;
 
 	spin_lock(&gpio_lock);
 	set_gpio_mode(op->bank,op->bit,GPIO_INPUT_MODE);
 	op->val = get_gpio_val(op->bank,op->bit);
 	spin_unlock(&gpio_lock);
+	printk("GPIO_%s_bit_%d(input bit:%d) = %d \n", &bank, op->bit, write_bit, op->val);
 	
 	return op->val ;
 }

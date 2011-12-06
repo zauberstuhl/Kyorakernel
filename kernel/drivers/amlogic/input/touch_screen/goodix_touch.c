@@ -31,6 +31,10 @@
 #error The code does not match the hardware version.
 #endif
 
+static int dbg_en = 0;
+#define goodix_dbg(level, fmt, args...)  { if(level) \
+					printk("[goodix]: " fmt, ## args); }
+
 struct goodix_ts_data {
 	uint16_t addr;
 	struct i2c_client *client;
@@ -40,8 +44,6 @@ struct goodix_ts_data {
 	struct hrtimer timer;
 	struct work_struct  work;
 	char phys[32];
-	int bad_data;
-	int retry;
 	int (*power)(int on);
 	struct early_suspend early_suspend;
 	int xmax;
@@ -49,13 +51,11 @@ struct goodix_ts_data {
 	bool swap_xy;
 	bool xpol;
 	bool ypol;
+	bool suspend_state;
 }; 
 
 static struct workqueue_struct *goodix_wq;
 
-/********************************************
-*	管理当前手指状态的伪队列，对当前手指根据时间顺序排序
-*	适用于Guitar小屏		*/
 static struct point_queue  finger_list;	//record the fingers list 
 /*************************************************/
 
@@ -68,31 +68,17 @@ static void goodix_ts_early_suspend(struct early_suspend *h);
 static void goodix_ts_late_resume(struct early_suspend *h);
 #endif
 
-/*******************************************************	
-功能：	
-	读取从机数据
-	每个读操作用两条i2c_msg组成，第1条消息用于发送从机地址，
-	第2条用于发送读取地址和取回数据；每条消息前发送起始信号
-参数：
-	client:	i2c设备，包含设备地址
-	buf[0]：	首字节为读取地址
-	buf[1]~buf[len]：数据缓冲区
-	len：	读取数据长度
-return：
-	执行消息数
-*********************************************************/
 /*Function as i2c_master_send */
 static int i2c_read_bytes(struct i2c_client *client, uint8_t *buf, int len)
 {
 	struct i2c_msg msgs[2];
 	int ret=-1;
-	//发送写地址
-	msgs[0].flags=!I2C_M_RD;//写消息
+	msgs[0].flags=!I2C_M_RD;
 	msgs[0].addr=client->addr;
 	msgs[0].len=1;
 	msgs[0].buf=&buf[0];
-	//接收数据
-	msgs[1].flags=I2C_M_RD;//读消息
+
+	msgs[1].flags=I2C_M_RD;
 	msgs[1].addr=client->addr;
 	msgs[1].len=len-1;
 	msgs[1].buf=&buf[1];
@@ -101,24 +87,13 @@ static int i2c_read_bytes(struct i2c_client *client, uint8_t *buf, int len)
 	return ret;
 }
 
-/*******************************************************	
-功能：
-	向从机写数据
-参数：
-	client:	i2c设备，包含设备地址
-	buf[0]：	首字节为写地址
-	buf[1]~buf[len]：数据缓冲区
-	len：	数据长度	
-return：
-	执行消息数
-*******************************************************/
+
 /*Function as i2c_master_send */
 static int i2c_write_bytes(struct i2c_client *client,uint8_t *data,int len)
 {
 	struct i2c_msg msg;
 	int ret=-1;
-	//发送设备地址
-	msg.flags=!I2C_M_RD;//写消息
+	msg.flags=!I2C_M_RD;
 	msg.addr=client->addr;
 	msg.len=len;
 	msg.buf=data;		
@@ -127,14 +102,6 @@ static int i2c_write_bytes(struct i2c_client *client,uint8_t *data,int len)
 	return ret;
 }
 
-/*******************************************************
-功能：
-	Guitar初始化函数，用于发送配置信息，获取版本信息
-参数：
-	ts:	client私有数据结构体
-return：
-	执行结果码，0表示正常执行
-*******************************************************/
 static int goodix_init_panel(struct goodix_ts_data *ts)
 {
 	int ret=-1;
@@ -224,13 +191,20 @@ static ssize_t goodix_write(struct device *dev, struct device_attribute *attr, c
 			printk(KERN_ALERT"total data = %d\n", i);
 			i2c_write_bytes(ts->client,&config_data[0],i);
     }
+
+    if (!strcmp(attr->attr.name, "debug")) {
+			dbg_en = !dbg_en;
+			printk(KERN_ALERT"%s debug\n", dbg_en ? "enable" : "disable");
+  	}
     return count;
 }
 
 static DEVICE_ATTR(ctpconfig, S_IRWXUGO, goodix_read, goodix_write);
+static DEVICE_ATTR(debug, S_IRWXUGO, goodix_read, goodix_write);
 
 static struct attribute *goodix_attr[] = {
     &dev_attr_ctpconfig.attr,
+    &dev_attr_debug.attr,
     NULL
 };
 
@@ -239,15 +213,6 @@ static struct attribute_group goodix_attr_group = {
     .attrs = goodix_attr,
 };
 
-/*******************************************************	
-功能：
-	触摸屏工作函数
-	由中断触发，接受1组坐标数据，校验后再分析输出
-参数：
-	ts:	client私有数据结构体
-return：
-	执行结果码，0表示正常执行
-********************************************************/
 static void goodix_ts_work_func(struct work_struct *work)
 {	
 	uint8_t  point_data[35]={ 0 };
@@ -263,6 +228,8 @@ static void goodix_ts_work_func(struct work_struct *work)
 	struct goodix_ts_data *ts = container_of(work, struct goodix_ts_data, work);
 	struct goodix_i2c_rmi_platform_data *pdata = ts->client->dev.platform_data;
 	int SHUTDOWN_PORT  = pdata->gpio_shutdown;
+	static int work_count = 0;
+	goodix_dbg(dbg_en, "work count=%d\n", work_count++);
 
 	if (gpio_get_value(SHUTDOWN_PORT))
 	{
@@ -270,27 +237,22 @@ static void goodix_ts_work_func(struct work_struct *work)
 		goto NO_ACTION;
 	}	
 
-start_read_i2c:
-	//if i2c transfer is failed, let it restart less than 10 times
-	if( ts->retry > 9) {
-		if(!ts->use_irq)
-			//ts->timer.state = HRTIMER_STATE_INACTIVE;
-			hrtimer_cancel(&ts->timer);
-		dev_info(&(ts->client->dev), "Because of transfer error, Guitar's driver stop working.\n");
-		return ;
+	int retry = 0;
+	while(1) {
+		ret=i2c_read_bytes(ts->client, point_data, 35);
+		if (ret > 0)
+			break;
+		else {
+			dev_err(&(ts->client->dev),"%dth I2C transfer error. Number:%d\n ", retry, ret);
+			msleep(20);
+			goodix_init_panel(ts);
+			msleep(20);
+			if (++retry > 3) {
+				dev_info(&(ts->client->dev), "Because of transfer error, Guitar's driver stop working.\n");
+				goto XFER_ERROR;
+			}
+		}
 	}
-	if(ts->bad_data) 
-		msleep(16);
-	ret=i2c_read_bytes(ts->client, point_data, 35);
-	if(ret <= 0)	
-	{
-		dev_err(&(ts->client->dev),"I2C transfer error. Number:%d\n ", ret);
-		ts->bad_data = 1;
-		ts->retry++;
-		goodix_init_panel(ts);
-		goto start_read_i2c;
-	}	
-	ts->bad_data = 0; 
 	
 	//The bit indicate which fingers pressed down
 	switch(point_data[1]& 0x1f)
@@ -361,18 +323,13 @@ BIT_NO_CHANGE:
 			pos[count][1] = (unsigned int)(point_data[26]<<8) + (unsigned int) (point_data[27]);
 			pressure[count] = (unsigned int) (point_data[28]);
 		}
-#ifdef GOODIX_TS_DEBUG	
-		dev_info(&(ts->client->dev), "Original data: Count:%d Index:%d X:%d Y:%d\n",count, finger_list.pointer[count].num,  pos[count][0], pos[count][1]);
-#endif
 		if (pdata->swap_xy)
 			swap(pos[count][0] ,pos[count][1]); 
 		if (pdata->xpol)
 			pos[count][0] = pdata->xmax - pos[count][0];
 		if (pdata->ypol)
 			pos[count][1] = pdata->ymax - pos[count][1];
-#ifdef GOODIX_TS_DEBUG
-		dev_info(&(ts->client->dev), " Coordinate: Count:%d Index:%d X:%d Y:%d\n",count, finger_list.pointer[count].num, pos[count][0], pos[count][1]);
-#endif
+		goodix_dbg(dbg_en, "Count:%d Index:%d X:%d Y:%d\n",count, finger_list.pointer[count].num, pos[count][0], pos[count][1]);
 	}
 
 	if(finger_list.length > 0 && finger_list.pointer[0].state == FLAG_DOWN)
@@ -411,16 +368,6 @@ BIT_NO_CHANGE:
 	}
 #endif
 	input_sync(ts->input_dev);
-
-#ifdef GOODIX_DEBUG
-	if((finger_bit^point_data[1]) != 0)
-	{
-		for(count = 0; count < finger_list.length; count++)
-			printk(KERN_INFO "Index:%d, No:%d, State:%d\n", count, finger_list.pointer[count].num, finger_list.pointer[count].state);
-	 	printk(KERN_INFO "\n");
-	}
-#endif
-
 	del_point(&finger_list);
 	finger_bit=point_data[1];
 	
@@ -431,41 +378,24 @@ NO_ACTION:
 
 }
 
-/*******************************************************	
-功能：
-	计时器响应函数
-	由计时器触发，调度触摸屏工作函数运行；之后重新计时
-参数：
-	timer：函数关联的计时器	
-return：
-	计时器工作模式，HRTIMER_NORESTART表示不需要自动重启
-********************************************************/
 static enum hrtimer_restart goodix_ts_timer_func(struct hrtimer *timer)
 {
 	struct goodix_ts_data *ts = container_of(timer, struct goodix_ts_data, timer);
-
+	static int timer_count = 0;
+	goodix_dbg(dbg_en, "timer count=%d\n", timer_count++);
 	queue_work(goodix_wq, &ts->work);
 	hrtimer_start(&ts->timer, ktime_set(0, 16000000), HRTIMER_MODE_REL);
 	return HRTIMER_NORESTART;
 }
 
-/*******************************************************	
-功能：
-	中断响应函数
-	由中断触发，调度触摸屏处理函数运行
-参数：
-	timer：函数关联的计时器	
-return：
-	计时器工作模式，HRTIMER_NORESTART表示不需要自动重启
-********************************************************/
 static irqreturn_t goodix_ts_irq_handler(int irq, void *dev_id)
 {
 	struct goodix_ts_data *ts = dev_id;
 	struct goodix_i2c_rmi_platform_data *pdata = ts->client->dev.platform_data;
 	int level = gpio_get_value(pdata->gpio_irq);
-	//printk(KERN_ALERT"irq level = %d\n", level);
-//	if (!level) {
-	if (ts->init_finished) {
+	static int irq_count = 0;	
+	goodix_dbg(dbg_en, "irq level=%d, irq count=%d \n", level, irq_count++);
+	if (ts->init_finished && (!ts->suspend_state)) {
 		disable_irq_nosync(ts->client->irq);
 		queue_work(goodix_wq, &ts->work);
 	}
@@ -476,17 +406,6 @@ static irqreturn_t goodix_ts_irq_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-/*******************************************************	
-功能：
-	触摸屏探测函数
-	在注册驱动时调用（要求存在对应的client）；
-	用于IO,中断等资源申请；设备注册；触摸屏初始化等工作
-参数：
-	client：待驱动的设备结构体
-	id：设备ID
-return：
-	执行结果码，0表示正常执行
-********************************************************/
 static int goodix_ts_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct goodix_ts_data *ts;
@@ -502,7 +421,7 @@ static int goodix_ts_probe(struct i2c_client *client, const struct i2c_device_id
 	    printk(KERN_ALERT  "goodix platform data error\n");
 	    goto err_check_functionality_failed ;
 	}
-	dev_dbg(&client->dev,"Install touchscreen driver for guitar.\n");
+	printk("Install touchscreen driver for guitar(fixed suspend issue).\n");
 	//Check I2C function
 	ret = gpio_request(SHUTDOWN_PORT, "TS_SHUTDOWN");	//Request IO
 	if (ret < 0) 
@@ -605,8 +524,7 @@ static int goodix_ts_probe(struct i2c_client *client, const struct i2c_device_id
 
 	ts->init_finished = 0;
 	ts->use_irq = 0;
-	ts->retry=0;
-	ts->bad_data = 0;
+	ts->suspend_state = 0;
 	if (client->irq)
 	{
 		ret = gpio_request(INT_PORT, "TS_INT");	//Request IO
@@ -674,14 +592,6 @@ err_check_functionality_failed:
 }
 
 
-/*******************************************************	
-功能：
-	驱动资源释放
-参数：
-	client：设备结构体
-return：
-	执行结果码，0表示正常执行
-********************************************************/
 static int goodix_ts_remove(struct i2c_client *client)
 {
 	struct goodix_ts_data *ts = i2c_get_clientdata(client);
@@ -711,7 +621,6 @@ static int goodix_ts_remove(struct i2c_client *client)
 	return 0;
 }
 
-//停用设备
 static int goodix_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 {
 	int ret;
@@ -722,9 +631,6 @@ static int goodix_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	else
 		hrtimer_cancel(&ts->timer);
 	ret = cancel_work_sync(&ts->work);	
-	//if (ret && ts->use_irq) 
-	//	enable_irq(client->irq);
-	//TODO:工作队列禁用失败，则停止发送触摸屏中断
 	if (ts->power) {
 		ret = ts->power(0);
 		if (ret < 0)
@@ -732,7 +638,7 @@ static int goodix_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	}
 	return 0;
 }
-//重新唤醒
+
 static int goodix_ts_resume(struct i2c_client *client)
 {
 	int ret;
@@ -756,6 +662,7 @@ static void goodix_ts_early_suspend(struct early_suspend *h)
 {
 	struct goodix_ts_data *ts;
 	ts = container_of(h, struct goodix_ts_data, early_suspend);
+	ts->suspend_state = 1;
 	goodix_ts_suspend(ts->client, PMSG_SUSPEND);
 }
 
@@ -763,18 +670,17 @@ static void goodix_ts_late_resume(struct early_suspend *h)
 {
 	struct goodix_ts_data *ts;
 	ts = container_of(h, struct goodix_ts_data, early_suspend);
+	ts->suspend_state = 0;
 	goodix_ts_resume(ts->client);
 }
 #endif
 
-//可用于该驱动的 设备名—设备ID 列表
 //only one client
 static const struct i2c_device_id goodix_ts_id[] = {
 	{ GOODIX_I2C_NAME, 0 },
 	{ }
 };
 
-//设备驱动结构体
 static struct i2c_driver goodix_ts_driver = {
 	.probe		= goodix_ts_probe,
 	.remove		= goodix_ts_remove,
@@ -789,12 +695,6 @@ static struct i2c_driver goodix_ts_driver = {
 	},
 };
 
-/*******************************************************	
-功能：
-	驱动加载函数
-return：
-	执行结果码，0表示正常执行
-********************************************************/
 static int __devinit goodix_ts_init(void)
 {
 	int ret;
@@ -809,12 +709,6 @@ static int __devinit goodix_ts_init(void)
 	return ret; 
 }
 
-/*******************************************************	
-功能：
-	驱动卸载函数
-参数：
-	client：设备结构体
-********************************************************/
 static void __exit goodix_ts_exit(void)
 {
 	printk(KERN_DEBUG "Touchscreen driver of guitar is exiting...\n");

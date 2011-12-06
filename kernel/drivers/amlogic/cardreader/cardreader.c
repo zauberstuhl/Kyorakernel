@@ -34,6 +34,7 @@
 
 #define card_list_to_card(l)	container_of(l, struct memory_card, node)
 struct completion card_devadd_comp;
+struct memory_card *sdio_card;
 
 struct amlogic_card_host 
 {
@@ -171,7 +172,6 @@ static void card_reader_initialize(struct card_host *host)
 			card = card_alloc_card(host);
 			if (!card)
 				continue;
-
 			card->unit_state = CARD_UNIT_NOT_READY;
 			strcpy(card->name, CARD_SDIO_NAME_STR);
 			card->card_type = CARD_SDIO;
@@ -238,8 +238,11 @@ static irqreturn_t sdio_interrupt_monitor(int irq, void *dev_id, struct pt_regs 
 
 } 
 
+struct card_host *sdio_host;
+
 static int card_reader_init(struct card_host *host) 
 {	
+       sdio_host = host;
 	host->dma_buf = dma_alloc_coherent(NULL, host->max_req_size, (dma_addr_t *)&host->dma_phy_buf, GFP_KERNEL);
 	if(host->dma_buf == NULL)
 		return -ENOMEM;
@@ -291,8 +294,6 @@ static int card_reader_monitor(void *data)
 			card->card_io_init(card);
 			card->card_detector(card);
 			card_release_host(card_host);
-			if (card_type == CARD_SECURE_DIGITAL)
-				msleep(400);
 
 	    	if((card->card_status == CARD_INSERTED) && (((card->unit_state != CARD_UNIT_READY) 
 				&& ((card_type == CARD_SDIO) ||(card_type == CARD_INAND)
@@ -306,7 +307,7 @@ static int card_reader_monitor(void *data)
 					card->unit_state = CARD_UNIT_READY;
 					break;
 				}
-					
+
 				__card_claim_host(card_host, card);
 				card->card_insert_process(card);
 				card_release_host(card_host);
@@ -414,6 +415,19 @@ int __card_claim_host(struct card_host *host, struct memory_card *card)
 
 EXPORT_SYMBOL(__card_claim_host);
 
+void sdio_reinit(void)
+{
+    struct memory_card* sdio_card = card_find_card(sdio_host, CARD_SDIO);
+    
+    __card_claim_host(sdio_host, sdio_card);
+    sdio_card->card_io_init(sdio_card);
+    sdio_card->card_detector(sdio_card);
+    sdio_card->card_insert_process(sdio_card);
+    sdio_card->unit_state = CARD_UNIT_READY;
+    card_release_host(sdio_host);
+}
+EXPORT_SYMBOL(sdio_reinit);
+
 #ifdef CONFIG_SDIO
 int sdio_read_func_cis(struct sdio_func *func);
 static int card_sdio_init_func(struct memory_card *card, unsigned int fn)
@@ -447,6 +461,9 @@ fail:
 	return ret;
 }
 
+#if defined(CONFIG_MACH_MESON_8726M_REFB09)
+extern int amlogic_wifi_power(int on);
+#endif
 static int card_sdio_init_card(struct memory_card *card)
 {
 	int err, i;
@@ -461,6 +478,9 @@ static int card_sdio_init_card(struct memory_card *card)
 			return err;
 	}
 
+#if defined(CONFIG_MACH_MESON_8726M_REFB09)
+	amlogic_wifi_power(0);
+#endif
 	return 0;
 }
 

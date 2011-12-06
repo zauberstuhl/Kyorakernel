@@ -43,6 +43,7 @@ enum {
 	SUSPEND_REQUESTED_AND_SUSPENDED = SUSPEND_REQUESTED | SUSPENDED,
 };
 static int state;
+static DECLARE_WAIT_QUEUE_HEAD(keyguard_wq);
 
 void register_early_suspend(struct early_suspend *handler)
 {
@@ -75,8 +76,18 @@ static void early_suspend(struct work_struct *work)
 	struct early_suspend *pos;
 	unsigned long irqflags;
 	int abort = 0;
+	int i;
 	if (debug_mask & DEBUG_SUSPEND)
 		pr_info("Start: early_suspend_work\n");
+    /*for (i=0;i<60;i++){ // 60 seconds timeout for keyguard
+        wake_up_all(&keyguard_wq);
+        wait_event_timeout(keyguard_wq,
+            !is_wake_lock_locked(WAKE_LOCK_SUSPEND,"Keyguard"),
+            HZ);
+        if (!is_wake_lock_locked(WAKE_LOCK_SUSPEND,"Keyguard"))
+            break;
+        printk("wait wake lock Keyguard for %d seconds ...\n", i);
+    }*/
 	mutex_lock(&early_suspend_lock);
 	spin_lock_irqsave(&state_lock, irqflags);
 	if (state == SUSPEND_REQUESTED)

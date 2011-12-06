@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 ARM Limited. All rights reserved.
+ * Copyright (C) 2010-2011 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -172,6 +172,10 @@ _mali_osk_errcode_t pmm_policy_process_job_control( _mali_pmm_internal_state_t *
 
 	/* Mainly the data is the cores */
 	cores = pmm_cores_from_event_data( pmm, event );
+
+#if MALI_STATE_TRACKING
+	pmm->mali_last_pmm_status = pmm->status;
+#endif /* MALI_STATE_TRACKING */
 
 	switch( pmm->status )
 	{
@@ -436,6 +440,10 @@ _mali_osk_errcode_t pmm_policy_process_job_control( _mali_pmm_internal_state_t *
 
 	/* Update the PMM state */
 	pmm_update_system_state( pmm );
+#if MALI_STATE_TRACKING
+	pmm->mali_new_event_status = event->id;
+#endif /* MALI_STATE_TRACKING */
+
 	MALIPMM_DEBUG_PRINT( ("PMM: Job control policy process end - status=%d and event=%d\n", pmm->status,event->id) );
 
 	MALI_SUCCESS;

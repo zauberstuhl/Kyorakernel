@@ -89,6 +89,10 @@ struct key_input {
 
 static struct key_input *KeyInput = NULL;
 
+#ifdef CONFIG_AML_RTC
+static int resume_jeff_num = 0;
+#endif
+
 //#ifndef USE_RTC_INTR
 void key_input_polling(unsigned long data)
 {
@@ -181,14 +185,33 @@ static void keyinput_tasklet(unsigned long data)
     }
 }
 
+#ifdef CONFIG_AML_RTC
+extern int aml_rtc_alarm_status(void);
+#endif /* CONFIG_AML_RTC */
+
 static irqreturn_t am_key_interrupt(int irq, void *dev)
 {
+    int alarm = 0;
+
+    /*
+     * RTC interrupt is shared between RTC alarm and power key button.
+     * We should only send key input event if power key button is pressed.
+     * Read RTC alarm GPO status bit to differentiate between the two cases.
+     */
+#ifdef CONFIG_AML_RTC
+    if (jiffies_to_msecs(jiffies - resume_jeff_num) < 1000)
+        return IRQ_HANDLED;
+    alarm = aml_rtc_alarm_status();
+#endif /* CONFIG_AML_RTC */
+
     KeyInput->status = (READ_CBUS_REG(RTC_ADDR1)>>2)&1;
     WRITE_CBUS_REG(RTC_ADDR1, (READ_CBUS_REG(RTC_ADDR1) | (0x0000c000)));
-//    if (!KeyInput->suspend)
-        tasklet_schedule(&ki_tasklet);
-//    else
-//        printk("key interrupt when suspend\n");
+    if (!alarm) {
+//      if (!KeyInput->suspend)
+          tasklet_schedule(&ki_tasklet);
+//      else
+//          printk("key interrupt when suspend\n");
+    }
     return IRQ_HANDLED;
 }
 //#endif
@@ -347,12 +370,18 @@ static int key_input_remove(struct platform_device *pdev)
 static int key_input_suspend(struct platform_device *dev, pm_message_t state)
 {
     KeyInput->suspend = 1;
+#ifdef CONFIG_AML_RTC
+    resume_jeff_num = 0;
+#endif    
     return 0;
 }
 
 static int key_input_resume(struct platform_device *dev)
 {
     KeyInput->suspend = 0;
+#ifdef CONFIG_AML_RTC
+    resume_jeff_num = jiffies;
+#endif 
     return 0;
 }
 #else

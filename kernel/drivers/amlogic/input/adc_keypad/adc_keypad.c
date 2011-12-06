@@ -50,6 +50,8 @@ struct kp {
 	struct input_dev *input;
 	struct timer_list timer;
 	unsigned int cur_keycode;
+	unsigned int tmp_code;
+	int count;	
 	int config_major;
 	char config_name[20];
 	struct class *config_class;
@@ -66,7 +68,7 @@ static int timer_count = 0;
 
 static int kp_search_key(struct kp *kp)
 {
-	struct adc_key *key = kp->key;
+	struct adc_key *key;
 	int value, i, j;
 	
 	for (i=0; i<kp->chan_num; i++) {
@@ -79,7 +81,8 @@ static int kp_search_key(struct kp *kp)
 		printk("key %d voltage detected.\n", value);
 		}
 
-	 	 for (j=0; j<kp->key_num; j++) {
+		key = kp->key;
+	 	for (j=0; j<kp->key_num; j++) {
 			if ((key->chan == kp->chan[i])
 			&& (value >= key->value - key->tolerance)
 			&& (value <= key->value + key->tolerance)) {
@@ -95,33 +98,35 @@ static int kp_search_key(struct kp *kp)
 static void kp_work(struct kp *kp)
 {
 	int code = kp_search_key(kp);
-	
-	if (kp->cur_keycode) {
-		if (!code) {
-			printk("key %d released.\n", kp->cur_keycode);
-			input_report_key(kp->input, kp->cur_keycode, 0);
-			kp->cur_keycode = 0;
-			
-			if (kp->led_control){
-				kp->led_control_param[0] = 2;
-				kp->led_control_param[1] = code;
-	    			timer_count = kp->led_control(kp->led_control_param);
-			}
-		}
-		else {
-			// detect another key while pressed
-		}
+
+	if ((!code) && (!kp->cur_keycode)) {
+		return;
 	}
-	else {
-		if (code) {
-			if (kp->led_control && (code!=KEY_PAGEUP) && (code!=KEY_PAGEDOWN)){
-				kp->led_control_param[0] = 1;
-				kp->led_control_param[1] = code;
-	    			timer_count = kp->led_control(kp->led_control_param);
+	else if (code != kp->tmp_code) {
+		kp->tmp_code = code;
+		kp->count = 0;
+	}
+	else if(++kp->count == 2) {
+		if (kp->cur_keycode != code) {
+			if (code) {
+				printk("key %d down\n", code);
+				input_report_key(kp->input, code, 1);
+//				if (kp->led_control && (code!=KEY_PAGEUP) && (code!=KEY_PAGEDOWN)){
+//					kp->led_control_param[0] = 1;
+//					kp->led_control_param[1] = code;
+//		    			timer_count = kp->led_control(kp->led_control_param);
+//				}
+			}
+			else {
+				printk("key %d up\n", kp->cur_keycode);
+				input_report_key(kp->input, kp->cur_keycode, 0);
+//				if (kp->led_control){
+//					kp->led_control_param[0] = 2;
+//					kp->led_control_param[1] = code;
+//		    			timer_count = kp->led_control(kp->led_control_param);
+//				}
 			}
 			kp->cur_keycode = code;
-			printk("key %d pressed.\n", kp->cur_keycode);
-			input_report_key(kp->input, kp->cur_keycode, 1);
 		}
 	}
 }
@@ -185,7 +190,7 @@ void kp_timer_sr(unsigned long data)
 		printk("adc ch4 sample = unknown key %x, pressed.\n", result);
     }
 #endif
-    mod_timer(&kp_data->timer,jiffies+msecs_to_jiffies(200));
+    mod_timer(&kp_data->timer,jiffies+msecs_to_jiffies(25));
 }
 
 static int
@@ -209,10 +214,11 @@ static const struct file_operations keypad_fops = {
     .release    = adckpd_config_release,
 };
 
-static int register_keypad_dev(struct kp  *kp)
+static int register_keypad_dev(struct kp  *kp, int dev_id)
 {
     int ret=0;
     strcpy(kp->config_name,"am_adc_kpd");
+    kp->config_name[strlen(kp->config_name)] = (char)('0' + dev_id);
     ret=register_chrdev(0, kp->config_name, &keypad_fops);
     if(ret<=0)
     {
@@ -253,6 +259,8 @@ static int __init kp_probe(struct platform_device *pdev)
     platform_set_drvdata(pdev, kp);
     kp->input = input_dev;
     kp->cur_keycode = 0;
+		kp->tmp_code = 0;
+		kp->count = 0;
      
     setup_timer(&kp->timer, kp_timer_sr, kp) ;
     mod_timer(&kp->timer, jiffies+msecs_to_jiffies(100));
@@ -298,8 +306,13 @@ static int __init kp_probe(struct platform_device *pdev)
     input_dev->id.product = 0x0001;
     input_dev->id.version = 0x0100;
 
-    input_dev->rep[REP_DELAY]=0xffffffff;
-    input_dev->rep[REP_PERIOD]=0xffffffff;
+    if (!pdata->repeat_delay || !pdata->repeat_period) {
+        input_dev->rep[REP_DELAY]=0xffffffff;
+        input_dev->rep[REP_PERIOD]=0xffffffff;
+    } else {
+    	input_dev->rep[REP_DELAY]=pdata->repeat_delay;
+        input_dev->rep[REP_PERIOD]=pdata->repeat_period;
+    }
 
     input_dev->keycodesize = sizeof(unsigned short);
     input_dev->keycodemax = 0x1ff;
@@ -313,7 +326,7 @@ static int __init kp_probe(struct platform_device *pdev)
 		    return -EINVAL;
     }
     printk("adc keypad register input device completed.\r\n");
-    register_keypad_dev(gp_kp);
+    register_keypad_dev(gp_kp, pdev->id);
     return 0;
 }
 

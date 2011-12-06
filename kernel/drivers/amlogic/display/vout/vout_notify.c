@@ -57,13 +57,11 @@ const vinfo_t *get_current_vinfo(void)
 	const vinfo_t *info=NULL;
 
 	mutex_lock(&vout_mutex);
-
 	if(vout_module.curr_vout_server)
 	{
 		BUG_ON(vout_module.curr_vout_server->op.get_vinfo == NULL);
 		info = vout_module.curr_vout_server->op.get_vinfo();
 	}
-
 	mutex_unlock(&vout_mutex);
 
 	return info;
@@ -200,6 +198,7 @@ int vout_register_server(vout_server_t*  mem_server)
 		if(p_server->name && mem_server->name && strcmp(p_server->name,mem_server->name)==0)
 		{
 			//vout server already registered.
+			
 			mutex_unlock(&vout_mutex);
 			return -1;
 		}

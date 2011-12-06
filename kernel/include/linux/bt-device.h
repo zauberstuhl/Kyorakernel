@@ -15,6 +15,8 @@ struct bt_dev_data {
     void (*bt_dev_init)(void);
     void (*bt_dev_on)(void);
     void (*bt_dev_off)(void);
+    void (*bt_dev_suspend)(void);
+    void (*bt_dev_resume)(void);
 };
 
 #endif    

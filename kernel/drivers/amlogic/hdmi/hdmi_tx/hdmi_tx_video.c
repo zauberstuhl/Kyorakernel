@@ -26,6 +26,9 @@
 
 #include "hdmi_tx_module.h"
 #include "hdmi_info_global.h"
+#include "m1/hdmi_tx_reg.h"
+
+static unsigned char hdmi_output_rgb = 0;
 
 static Hdmi_tx_video_para_t hdmi_tx_video_params[] = 
 {
@@ -290,8 +293,9 @@ static void hdmi_tx_construct_avi_packet(Hdmi_tx_video_para_t *video_param, char
 
     aspect_ratio = video_param->aspect_ratio;
     cc = video_param->cc;
-    AVI_DB[1] = (aspect_ratio) | (aspect_ratio << 4) | (cc << 6);
-    //AVI_DB[1] = 8 | (aspect_ratio << 4) | (cc << 6);
+//HDMI CT 7-24
+    //AVI_DB[1] = (aspect_ratio) | (aspect_ratio << 4) | (cc << 6);
+    AVI_DB[1] = 8 | (aspect_ratio << 4) | (cc << 6);
 
     sc = video_param->sc;
     if(video_param->cc == CC_XVYCC601)
@@ -332,6 +336,21 @@ void hdmitx_init_parameters(HDMI_TX_INFO_t *info)
 
 }
 
+//HDMI Identifier = 0x000c03
+//If not, treated as a DVI Device
+static int is_dvi_device(rx_cap_t* pRXCap)
+{
+    if(pRXCap->IEEEOUI != 0x000c03)
+        return 1;
+    else
+        return 0;
+}
+
+void hdmitx_output_rgb(void)
+{
+    hdmi_output_rgb = 1;
+}
+
 int hdmitx_set_display(hdmitx_dev_t* hdmitx_device, HDMI_Video_Codes_t VideoCode)
 {
     Hdmi_tx_video_para_t *param;
@@ -348,16 +367,59 @@ int hdmitx_set_display(hdmitx_dev_t* hdmitx_device, HDMI_Video_Codes_t VideoCode
     param = hdmi_get_video_param(VideoCode);
     if(param){
         param->color = param->color_prefer;
-        if(param->color == COLOR_SPACE_YUV444 &&
-            (hdmitx_device->RXCap.native_Mode&0x20) == 0){
-            param->color = COLOR_SPACE_YUV422;        
+		if(hdmi_output_rgb){
+ 	       param->color = COLOR_SPACE_RGB444;        
         }
-        if(param->color == COLOR_SPACE_YUV422 &&
-            (hdmitx_device->RXCap.native_Mode&0x10) == 0){
-            param->color = COLOR_SPACE_RGB444;        
-        }
+        else{
+//HDMI CT 7-24 Pixel Encoding - YCbCr to YCbCr Sink
+	        switch(hdmitx_device->RXCap.native_Mode & 0x30)
+	        {
+	            case 0x20:    //bit5==1, then support YCBCR444 + RGB
+	            case 0x30:
+	                param->color = COLOR_SPACE_YUV444;
+	                break;
+	            case 0x10:    //bit4==1, then support YCBCR422 + RGB
+	                param->color = COLOR_SPACE_YUV422;
+	                break;
+	            default:
+	                param->color = COLOR_SPACE_RGB444;
+	        }
+        }  
         if(hdmitx_device->HWOp.SetDispMode(param)>=0){
-    
+//HDMI CT 7-33 DVI Sink, no HDMI VSDB nor any other VSDB, No GB or DI expected
+//TMDS_MODE[hdmi_config]
+//0: DVI Mode       1: HDMI Mode
+            //if(hdmitx_device->hdmi_info.output_state==CABLE_PLUGIN_DVI_OUT)
+            if(is_dvi_device(&hdmitx_device->RXCap))
+            {
+                hdmi_print(1,"Sink is DVI device\n");
+                hdmi_wr_reg(TX_TMDS_MODE, hdmi_rd_reg(TX_TMDS_MODE) & ~(1<<6));
+            }
+            else
+            {
+                hdmi_print(1,"Sink is HDMI device\n");
+                hdmi_wr_reg(TX_TMDS_MODE, hdmi_rd_reg(TX_TMDS_MODE) |  (3<<6));
+            }
+
+//check system status by reading EDID_STATUS
+            switch(hdmi_rd_reg(TX_HDCP_ST_EDID_STATUS) >> 6)
+            {
+                case 0:
+                    hdmi_print(1,"No sink attached\n");
+                    break;
+                case 1:
+                    hdmi_print(1,"Source reading EDID\n");
+                    break;
+                case 2:
+                    hdmi_print(1,"Source in DVI Mode\n");
+                    break;
+                case 3:
+                    hdmi_print(1,"Source in HDMI Mode\n");
+                    break;
+                default:
+                    hdmi_print(1,"EDID Status error\n");
+            }
+
             hdmi_tx_construct_avi_packet(param, (char*)AVI_DB);
     
             hdmitx_device->HWOp.SetPacket(HDMI_PACKET_AVI, AVI_DB, AVI_HB);

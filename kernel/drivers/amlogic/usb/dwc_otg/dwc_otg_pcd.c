@@ -88,7 +88,7 @@ static dwc_otg_pcd_t *s_pcd = 0;
 
 /* Display the contents of the buffer */
 extern void dump_msg(const u8 * buf, unsigned int length);
-
+extern void dwc_otg_pcd_stop(dwc_otg_pcd_t * _pcd);
 /**
  * This function completes a request.  It call's the request call back.
  */
@@ -99,6 +99,10 @@ void request_done(dwc_otg_pcd_ep_t * _ep, dwc_otg_pcd_request_t * _req,
 	dwc_otg_core_if_t *core_if = GET_CORE_IF(_ep->pcd);
 
 	DWC_DEBUGPL(DBG_PCDV, "%s(%p)\n", __func__, _ep);
+
+	if(_ep->dwc_ep.num && _ep->dwc_ep.is_in)
+		list_del_init(&_req->pcd_queue);
+
 	list_del_init(&_req->queue);
 
 	if (_req->req.status == -EINPROGRESS) {
@@ -118,8 +122,11 @@ void request_done(dwc_otg_pcd_ep_t * _ep, dwc_otg_pcd_request_t * _req,
 	}
 
 	_ep->stopped = stopped;
+	if(_ep->dwc_ep.is_in && _ep->dwc_ep.num){
+		DWC_DEBUGPL(DBG_PCDV, "ep%d,len=%d\n",_ep->dwc_ep.num,_req->req.actual);
+		_ep->pcd->ep_in_sync = 0;
+	}
 
-	///dbg by jshan
 	if(core_if->dma_enable)
 		dwc_otg_pcd_dma_unmap(&_ep->dwc_ep);
 }
@@ -356,7 +363,8 @@ static struct usb_request *dwc_otg_pcd_alloc_request(struct usb_ep *_ep,
 						     gfp_t _gfp_flags)
 {
 	dwc_otg_pcd_request_t *req;
-
+	dwc_otg_pcd_ep_t *ep;
+	ep = container_of(_ep, dwc_otg_pcd_ep_t, ep);
 	DWC_DEBUGPL(DBG_PCDV, "%s(%p,%d)\n", __func__, _ep, _gfp_flags);
 	if (0 == _ep) {
 		DWC_WARN("%s() %s\n", __func__, "Invalid EP!\n");
@@ -370,6 +378,8 @@ static struct usb_request *dwc_otg_pcd_alloc_request(struct usb_ep *_ep,
 	memset(req, 0, sizeof(dwc_otg_pcd_request_t));
 	req->req.dma = DMA_ADDR_INVALID;
 	INIT_LIST_HEAD(&req->queue);
+	INIT_LIST_HEAD(&req->pcd_queue);
+	req->ep = ep;
 	return &req->req;
 }
 
@@ -529,6 +539,7 @@ static int dwc_otg_pcd_ep_queue(struct usb_ep *_ep,
 	dwc_otg_pcd_ep_t *ep;
 	dwc_otg_pcd_t *pcd;
 	unsigned long flags = 0;
+	int ep_in_pass = 1;
 
 	DWC_DEBUGPL(DBG_PCDV, "%s(%p,%p,%d)\n",
 		    __func__, _ep, _req, _gfp_flags);
@@ -578,12 +589,21 @@ static int dwc_otg_pcd_ep_queue(struct usb_ep *_ep,
 		//_req->zero = 1;
 	}
 
+	if(ep->dwc_ep.num && ep->dwc_ep.is_in && pcd->ep_in_sync)
+		ep_in_pass = 0;
+	if(GET_CORE_IF(pcd)->en_multiple_tx_fifo || !GET_CORE_IF(pcd)->dma_enable)
+		ep_in_pass = 1;
 
 	/* Start the transfer */
-	if (list_empty(&ep->queue) && !ep->stopped) {
+	if (list_empty(&ep->queue) && !ep->stopped && ep_in_pass) {
 		if(GET_CORE_IF(pcd)->dma_enable){
 			dwc_otg_pcd_dma_map(&ep->dwc_ep, _req);
 		}
+
+		if(ep->dwc_ep.is_in && ep->dwc_ep.num){
+			pcd->ep_in_sync = ep->dwc_ep.num;
+		}
+
 		/* EP0 Transfer? */
 		if (ep->dwc_ep.num == 0) {
 			switch (pcd->ep0state) {
@@ -637,6 +657,10 @@ static int dwc_otg_pcd_ep_queue(struct usb_ep *_ep,
 	if ((req != 0) || prevented) {
 		++pcd->request_pending;
 		list_add_tail(&req->queue, &ep->queue);
+
+		if(ep->dwc_ep.num && ep->dwc_ep.is_in)
+			list_add_tail(&req->pcd_queue, &pcd->req_queue);
+
 		if (ep->dwc_ep.is_in && ep->stopped
 		    && !(GET_CORE_IF(pcd)->dma_enable)) {
 			/** @todo NGS Create a function for this. */
@@ -903,6 +927,7 @@ static int dwc_otg_pcd_wakeup(struct usb_gadget *_gadget)
 	}
 
 	SPIN_UNLOCK_IRQRESTORE(&pcd->lock, flags);
+	
 	return 0;
 }
 
@@ -919,15 +944,19 @@ static int dwc_otg_pcd_pullup(struct usb_gadget *_gadget, int is_on)
 
 	if(is_on)
 		dwc_otg_device_soft_connect(GET_CORE_IF(pcd));
-	else
+	else{
 		dwc_otg_device_soft_disconnect(GET_CORE_IF(pcd));
+		SPIN_LOCK(&pcd->lock);
+		dwc_otg_pcd_stop(pcd);
+		SPIN_UNLOCK(&pcd->lock);
+	}
 
 	return 0;
 }
 
 static const struct usb_gadget_ops dwc_otg_pcd_ops = {
 	.get_frame = dwc_otg_pcd_get_frame,
-	.wakeup = dwc_otg_pcd_wakeup,
+	//.wakeup = dwc_otg_pcd_wakeup,
 	.pullup	= dwc_otg_pcd_pullup,
 	// current versions must always be self-powered
 };
@@ -993,7 +1022,7 @@ static int32_t dwc_otg_pcd_start_cb(void *_p)
 static int32_t dwc_otg_pcd_stop_cb(void *_p)
 {
 	dwc_otg_pcd_t *pcd = (dwc_otg_pcd_t *) _p;
-	extern void dwc_otg_pcd_stop(dwc_otg_pcd_t * _pcd);
+	
 
 	dwc_otg_pcd_stop(pcd);
 	return 1;
@@ -1387,7 +1416,9 @@ void dwc_otg_pcd_reinit(dwc_otg_pcd_t * _pcd)
  */
 static void dwc_otg_pcd_gadget_release(struct device *_dev)
 {
+	printk(KERN_ERR "%s %s %d\n",__FILE__,__FUNCTION__,__LINE__);
 	DWC_DEBUGPL(DBG_PCDV, "%s(%p)\n", __func__, _dev);
+	dwc_otg_device_soft_disconnect(GET_CORE_IF(s_pcd));
 }
 
 /** 
@@ -1426,6 +1457,9 @@ int __init dwc_otg_pcd_init(struct lm_device *_lmdev)
 	pcd->gadget.dev.parent = &_lmdev->dev;
 	pcd->gadget.dev.release = dwc_otg_pcd_gadget_release;
 	pcd->gadget.ops = &dwc_otg_pcd_ops;
+
+
+	INIT_LIST_HEAD(&pcd->req_queue);
 
 	if (GET_CORE_IF(pcd)->hwcfg4.b.ded_fifo_en) {
 		DWC_PRINT("Dedicated Tx FIFOs mode\n");
@@ -1604,6 +1638,7 @@ int usb_gadget_register_driver(struct usb_gadget_driver *_driver)
 		s_pcd->gadget.dev.driver = 0;
 		return retval;
 	}
+	dwc_otg_device_soft_connect(GET_CORE_IF(s_pcd));
 	DWC_DEBUGPL(DBG_ANY, "registered gadget driver '%s'\n",
 		    _driver->driver.name);
 	return 0;

@@ -123,7 +123,8 @@ int MxL_I2C_Read(u32 I2C_adap, int Addr, char* mData)
 ******************************************************************************/
 void MxL_Delay(int mSec)
 {
-    mdelay(mSec);
+    //mdelay(mSec);
+    msleep(mSec);
 }
 
 

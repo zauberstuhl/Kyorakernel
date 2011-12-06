@@ -286,11 +286,17 @@ typedef enum tvin_sig_status_e {
 
 // tvin parameters
 #define TVIN_PARM_FLAG_CAP 0x00000001 //tvin_parm_t.flag[ 0]: 1/enable or 0/disable frame capture function
-
+typedef struct fmt_info_s {
+	enum tvin_sig_fmt_e     fmt; // signal format of format
+	unsigned short			frame_rate;//rate of frame 
+	unsigned short			h_active;  //camera in the unit of pixel
+    unsigned short			v_active;  //camera in the unit of line
+    unsigned int			reserved;  // reserved
+} fmt_info_t;
 
 typedef struct tvin_parm_s {
     enum tvin_port_e        port;     // must set port in IOCTL
-    enum tvin_sig_fmt_e     fmt;      // signal format of format
+    struct fmt_info_s		fmt_info;//camera's format
     enum tvin_sig_status_e  status;   // signal status of decoder
     unsigned int            cap_addr; // start address of captured frame data [8 bits] in memory
                                       // for Component input, frame data [8 bits] order is Y0Cb0Y1Cr0¡­Y2nCb2nY2n+1Cr2n¡­
@@ -818,6 +824,11 @@ typedef enum camera_effect_flip_e {
 	CAM_EFFECT_ENC_SEPIABLUE,
 	CAM_EFFECT_ENC_COLORINV,
 }camera_effect_flip_t;
+typedef enum camera_banding_flip_e {
+    CAM_BANDING_50HZ = 0,
+	CAM_BANDING_60HZ,
+}camera_banding_flip_t;
+
 
 
 

@@ -472,6 +472,7 @@ struct snd_soc_platform {
 
 	/* platform stream ops */
 	struct snd_pcm_ops *pcm_ops;
+	void *pcm_pdata;	/* platform_data for the aml_pcm */
 };
 
 /* SoC machine DAI configuration, glues a codec and cpu DAI together */

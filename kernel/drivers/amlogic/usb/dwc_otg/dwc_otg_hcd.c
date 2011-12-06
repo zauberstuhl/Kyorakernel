@@ -92,7 +92,7 @@ static const struct hc_driver dwc_otg_hc_driver = {
 #define SOF_INTERVAL	2	/* period for SOF, in ticks  */
 
 /* forward declare */
-static void assign_and_init_hc(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh);
+static int assign_and_init_hc(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh);
 /**
  * Handles the start-of-frame interrupt in host mode (not the real interrupt, just stimulate it in a period). 
  * Only periodic transactions may be queued to the controller for the
@@ -406,11 +406,10 @@ static int32_t dwc_otg_hcd_disconnect_cb(void *_p)
 				hcchar.d32 = dwc_read_reg32(&hc_regs->hcchar);
 				if (hcchar.b.chen) {
 					/* Halt the channel. */
-					/* chdis not self clear in this case.
+					/* chdis not self clear in this case.*/
 					hcchar.b.chdis = 1;
 					dwc_write_reg32(&hc_regs->hcchar,
 							hcchar.d32);
-					*/
 				}
 
 				dwc_otg_hc_cleanup(dwc_otg_hcd->core_if,
@@ -1113,6 +1112,7 @@ int dwc_otg_hcd_urb_enqueue(struct usb_hcd *_hcd,
 #endif
 {
 	int retval = 0;
+	unsigned long flags;
 	dwc_otg_hcd_t *dwc_otg_hcd = hcd_to_dwc_otg_hcd(_hcd);
 	dwc_otg_qtd_t *qtd;
 #ifdef DEBUG
@@ -1120,19 +1120,31 @@ int dwc_otg_hcd_urb_enqueue(struct usb_hcd *_hcd,
 		dump_urb_info(_urb, "dwc_otg_hcd_urb_enqueue");
 	}
 #endif
+	local_irq_save(flags);
+
 	if (!dwc_otg_hcd->flags.b.port_connect_status) {
 		/* No longer connected. */
+		local_irq_restore(flags);
 		return -ENODEV;
 	}
 	if(dwc_otg_hcd->flags.b.port_connect_status_change){
 		/* Connect status change processing. */
+		local_irq_restore(flags);
 		return -ENODEV;
+	}
+	retval = usb_hcd_link_urb_to_ep(_hcd,_urb);
+	if (unlikely(retval)) {
+		DWC_ERROR("DWC OTG HCD URB Enqueue failed linking urb. "
+			  "Error status %d\n", retval);
+		local_irq_restore(flags);
+		return retval;
 	}
 	
 	qtd = dwc_otg_hcd_qtd_create(_urb, _mem_flags);
 	if (qtd == NULL) {
 		DWC_ERROR("DWC OTG HCD URB Enqueue failed creating QTD\n");
-		return -ENOMEM;
+		retval = -ENOMEM;
+		goto EXIT;
 	}
 
 	retval = dwc_otg_hcd_qtd_add(qtd, dwc_otg_hcd, _mem_flags);
@@ -1140,6 +1152,7 @@ int dwc_otg_hcd_urb_enqueue(struct usb_hcd *_hcd,
 		DWC_ERROR("DWC OTG HCD URB Enqueue failed adding QTD. "
 			  "Error status %d\n", retval);
 		dwc_otg_hcd_qtd_free(qtd);
+		goto EXIT;
 	}
 #ifdef NO_HOST_SOF
 	/*  Only start SOF_timer when there are INT and ISO transfer  */
@@ -1147,6 +1160,12 @@ int dwc_otg_hcd_urb_enqueue(struct usb_hcd *_hcd,
 		mod_timer(&dwc_otg_hcd->sof_timer, jiffies + SOF_INTERVAL);
 	}
 #endif
+
+EXIT:
+	if(unlikely(retval))
+		usb_hcd_unlink_urb_from_ep(_hcd,_urb);
+
+	local_irq_restore(flags);
 
 	return retval;
 }
@@ -1159,22 +1178,29 @@ int dwc_otg_hcd_urb_dequeue(struct usb_hcd *_hcd, struct urb *_urb, int status)
 int dwc_otg_hcd_urb_dequeue(struct usb_hcd *_hcd, struct urb *_urb)
 #endif
 {
+	int retval = 0;
 	unsigned long flags;
-	dwc_otg_hcd_t *dwc_otg_hcd;
+	dwc_otg_hcd_t *dwc_otg_hcd = NULL;
 	dwc_otg_qtd_t *urb_qtd;
 	dwc_otg_qh_t *qh;
 	struct usb_host_endpoint *_ep = dwc_urb_to_endpoint(_urb);
 
 	DWC_DEBUGPL(DBG_HCD, "DWC OTG HCD URB Dequeue\n");
 	
-	if(!_ep)
-	{
-		DWC_PRINT("urb(%p) ->ep is NULL!\n",_urb);
+	local_irq_save(flags);
+
+	retval = usb_hcd_check_unlink_urb(_hcd, _urb, status);
+	if(unlikely(retval) ){
+		goto EXIT;
+	}
+
+	if(!_ep){
+		DWC_PRINT("dwc_otg_hcd_urb_dequeue: urb(%p) ->ep is NULL!\n",_urb);
+		usb_hcd_unlink_urb_from_ep(_hcd, _urb);
+		local_irq_restore(flags);
 		return 0;
 	}
 	
-	local_irq_save(flags);
-
 	dwc_otg_hcd = hcd_to_dwc_otg_hcd(_hcd);
 	urb_qtd = (dwc_otg_qtd_t *) _urb->hcpriv;
 	qh = (dwc_otg_qh_t *) _ep->hcpriv;
@@ -1222,15 +1248,18 @@ int dwc_otg_hcd_urb_dequeue(struct usb_hcd *_hcd, struct urb *_urb)
 	}
 #endif
 
+EXIT:
 	local_irq_restore(flags);
 
-	_urb->hcpriv = NULL;
+	if(retval)
+		return retval;
 
 	/* Higher layer software sets URB status. */
-	usb_hcd_giveback_urb(_hcd, _urb, status);
+	dwc_otg_hcd_complete_urb(dwc_otg_hcd, _urb, status);
+	//usb_hcd_giveback_urb(_hcd, _urb, status);
 
 	if (CHK_DEBUG_LEVEL(DBG_HCDV | DBG_HCD_URB)) {
-		DWC_PRINT("Called usb_hcd_giveback_urb()\n");
+		DWC_PRINT("Called dwc_otg_hcd_complete_urb()\n");
 		DWC_PRINT("  urb->status = %d\n", _urb->status);
 	}
 
@@ -1271,7 +1300,7 @@ rescan:
 		}
 
 		DWC_WARN("DWC OTG HCD EP DISABLE:"
-			 " QTD List for this endpoint is not empty\n");
+			 " QTD List for this endpoint is not empty scan.\n");
 	}
 
 	dwc_otg_hcd_qh_remove_and_free(dwc_otg_hcd, qh);
@@ -2403,7 +2432,7 @@ int dwc_otg_hcd_hub_control(struct usb_hcd *_hcd,
  * @param _qh Transactions from the first QTD for this QH are selected and
  * assigned to a free host channel.
  */
-static void assign_and_init_hc(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh)
+static int assign_and_init_hc(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh)
 {
 	dwc_hc_t *hc;
 	dwc_otg_qtd_t *qtd;
@@ -2412,15 +2441,32 @@ static void assign_and_init_hc(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh)
 	DWC_DEBUGPL(DBG_HCDV, "%s(%p,%p)\n", __func__, _hcd, _qh);
 
 	if (list_empty(_qh->qtd_list.next))
-		return;
+		return -1;
+
+	qtd = list_entry(_qh->qtd_list.next, dwc_otg_qtd_t, qtd_list_entry);
+	urb = qtd->urb;
+
+	if(_qh->do_split && qtd->complete_split == 0){
+		if(_qh->ep_type == DWC_OTG_EP_TYPE_CONTROL ||
+		   _qh->ep_type == DWC_OTG_EP_TYPE_BULK){
+		       /* flow control for split bulk/control transfer */
+			if(dwc_frame_num_gt(_qh->sched_frame, _hcd->frame_number)){
+				//printk("assign_and_init_hc: sched_frame: %d, %d\n",_qh->sched_frame,_hcd->frame_number);
+				return -2;
+			}
+			else{
+				_qh->sched_frame = dwc_frame_num_inc(
+							_hcd->frame_number,_qh->interval);
+				//printk("assign_and_init_hc: next sched_frame: %d\n",_qh->sched_frame);
+			}
+		}
+	}
 
 	hc = list_entry(_hcd->free_hc_list.next, dwc_hc_t, hc_list_entry);
 
 	/* Remove the host channel from the free list. */
 	list_del_init(&hc->hc_list_entry);
 
-	qtd = list_entry(_qh->qtd_list.next, dwc_otg_qtd_t, qtd_list_entry);
-	urb = qtd->urb;
 	_qh->channel = hc;
 	_qh->qtd_in_process = qtd;
 
@@ -2573,6 +2619,8 @@ static void assign_and_init_hc(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh)
 
 	dwc_otg_hc_init(_hcd->core_if, hc);
 	hc->qh = _qh;
+
+	return 0;
 }
 
 /**
@@ -2626,7 +2674,9 @@ dwc_otg_transaction_type_e dwc_otg_hcd_select_transactions(dwc_otg_hcd_t * _hcd)
 	       !list_empty(&_hcd->free_hc_list)) {
 
 		qh = list_entry(qh_ptr, dwc_otg_qh_t, qh_list_entry);
-		assign_and_init_hc(_hcd, qh);
+		if(assign_and_init_hc(_hcd, qh))
+			break;
+
 
 		/*
 		 * Move the QH from the non-periodic inactive schedule to the
@@ -3019,6 +3069,7 @@ void dwc_otg_hcd_complete_urb(dwc_otg_hcd_t * _hcd, struct urb *_urb,
 
 	_urb->status = _status;
 	_urb->hcpriv = NULL;
+	usb_hcd_unlink_urb_from_ep(dwc_otg_hcd_to_hcd(_hcd), _urb);
 	usb_hcd_giveback_urb(dwc_otg_hcd_to_hcd(_hcd), _urb, _status);
 	//usb_hcd_giveback_urb(dwc_otg_hcd_to_hcd(_hcd), _urb);
 }

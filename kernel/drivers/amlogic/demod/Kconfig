@@ -9,6 +9,13 @@ menuconfig AM_DEMOD
 
 if AM_DEMOD
 
+config AM_DEMOD_DVBAPI
+       bool "Amlogic Demod DVBAPI Interface"
+	default y
+       depends on AM_DEMOD
+       help
+               m1 internal Demod DVBAPI Interface
+
 config AM_DEMOD_DEBUG
 	bool "Amlogic Demod Debug Interface"
 	default n
@@ -18,14 +25,14 @@ config AM_DEMOD_DEBUG
 
 config AM_AMDEMOD_DVBC
 	bool "AML DVBC demod driver"
-	default n
+	default y
 	depends on AM_DEMOD
 	help
 		m1 internal Demod DVB-C Driver
 
 config AM_AMDEMOD_DVBT
 	bool "AML DVBT demod driver"
-	default n
+	default y
 	depends on AM_DEMOD
 	help
 		m1 internal Demod DVB-T Driver

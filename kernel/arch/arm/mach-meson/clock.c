@@ -28,6 +28,80 @@ static unsigned long __initdata init_clock = CONFIG_INIT_A9_CLOCK;
 #else
 static unsigned long __initdata init_clock = 0;
 #endif
+// -----------------------------------------
+// clk_util_clk_msr
+// -----------------------------------------
+// from twister_core.v
+//
+// .clk0           ( am_ring_osc_clk_out[0]    ),
+// .clk1           ( am_ring_osc_clk_out[1]    ),
+// .clk2           ( ext_clk_to_msr_i          ),
+// .clk3           ( cts_a9_clk                ),
+// .clk4           ( cts_a9_periph_clk         ),
+// .clk5           ( cts_a9_axi_clk            ),
+// .clk6           ( cts_a9_at_clk             ),
+// .clk7           ( cts_a9_apb_clk            ),
+// .clk8           ( cts_arc625_clk            ),
+// .clk9           ( sys_pll_div3              ),
+// .clk10          ( ddr_pll_clk               ),
+// .clk11          ( other_pll_clk             ),
+// .clk12          ( aud_pll_clk               ),
+// .clk13          ( demod_pll_clk240          ),
+// .clk14          ( demod_pll_adc_clk         ),
+// .clk15          ( demod_pll_wifi_adc_clk    ),
+// .clk16          ( demod_pll_adc_clk_57      ),
+// .clk17          ( demod_pll_clk400          ),
+// .clk18          ( demod_pll_wifi_dac_clk    ),
+// .clk19          ( vid_pll_clk               ),
+// .clk20          ( vid_pll_ref_clk           ),
+// .clk21          ( HDMI_CH0_TMDSCLK          ),
+//
+// For Example
+//
+// unsigend long    clk81_clk   = clk_util_clk_msr( 2,      // mux select 2
+//                                                  50 );   // measure for 50uS
+//
+// returns a value in "clk81_clk" in Hz
+//
+// The "uS_gate_time" can be anything between 1uS and 65535 uS, but the limitation is
+// the circuit will only count 65536 clocks.  Therefore the uS_gate_time is limited by
+//
+//   uS_gate_time <= 65535/(expect clock frequency in MHz)
+//
+// For example, if the expected frequency is 400Mhz, then the uS_gate_time should
+// be less than 163.
+//
+// Your measurement resolution is:
+//
+//    100% / (uS_gate_time * measure_val )
+//
+//
+unsigned int clk_util_clk_msr_rl(unsigned int clk_mux)
+{
+    unsigned int regval = 0;
+    WRITE_CBUS_REG(MSR_CLK_REG0, 0);
+    // Set the measurement gate to 64uS
+    CLEAR_CBUS_REG_MASK(MSR_CLK_REG0, 0xffff);
+    SET_CBUS_REG_MASK(MSR_CLK_REG0, (64 - 1)); //64uS is enough for measure the frequence?
+    // Disable continuous measurement
+    // disable interrupts
+    CLEAR_CBUS_REG_MASK(MSR_CLK_REG0, ((1 << 18) | (1 << 17)));
+    CLEAR_CBUS_REG_MASK(MSR_CLK_REG0, (0x1f << 20));
+    SET_CBUS_REG_MASK(MSR_CLK_REG0, (clk_mux << 20) | // Select MUX
+                                    (1 << 19) |       // enable the clock
+									(1 << 16));       //enable measuring
+    // Wait for the measurement to be done
+    regval = READ_CBUS_REG(MSR_CLK_REG0);
+    do {
+        regval = READ_CBUS_REG(MSR_CLK_REG0);
+    } while (regval & (1 << 31));
+
+    // disable measuring
+    CLEAR_CBUS_REG_MASK(MSR_CLK_REG0, (1 << 16));
+    regval = (READ_CBUS_REG(MSR_CLK_REG2) + 31) & 0x000FFFFF;
+    // Return value in MHz*measured_val
+    return (regval >> 6);
+}
 
 long clk_round_rate(struct clk *clk,unsigned long rate)
 {
@@ -119,16 +193,20 @@ static int clk_set_rate_clk81(struct clk *clk, unsigned long rate)
     struct clk *father_clk;
     unsigned long r1;
     int ret;
+    int divider = 4;
 	
     if (r < 1000)
         r = r * 1000000;
+
+    if (r < 100000000)
+        divider = 8;
 
     father_clk = clk_get_sys("clk_other_pll", NULL);
 
     r1 = clk_get_rate(father_clk);
 
-    if (r1 != r*4) {
-        ret = father_clk->set_rate(father_clk, r*4);
+    if (r1 != r*divider) {
+        ret = father_clk->set_rate(father_clk, r*divider);
 
         if (ret != 0)
             return ret;
@@ -138,7 +216,7 @@ static int clk_set_rate_clk81(struct clk *clk, unsigned long rate)
 
     WRITE_MPEG_REG(HHI_MPEG_CLK_CNTL,
               (1 << 12) |          // select other PLL
-              ((4 - 1) << 0 ) |    // div1
+              ((divider - 1) << 0 ) |    // div1
               (1 << 7 ) |          // cntl_hi_mpeg_div_en, enable gating
               (1 << 8 ));          // Connect clk81 to the PLL divider output
 
@@ -198,7 +276,7 @@ static struct clk clk_sys_pll = {
 
 static struct clk clk_other_pll = {
     .name       = "clk_other_pll",
-    .rate       = 540000000,
+    .rate       = 750000000,
     .min        = 200000000,
     .max        = 800000000,
     .set_rate   = clk_set_rate_other_pll,
@@ -212,7 +290,7 @@ static struct clk clk_ddr_pll = {
 
 static struct clk clk81 = {
     .name       = "clk81",
-    .rate       = 180000000,
+    .rate       = 187500000,
     .min        = 100000000,
     .max        = 400000000,
     .set_rate   = clk_set_rate_clk81,
@@ -222,7 +300,13 @@ static struct clk a9_clk = {
     .name       = "a9_clk",
     .rate       = 600000000,
     .min        = 200000000,
-    .max        = 800000000,
+#if defined(CONFIG_MACH_MESON_8726M_REFC03) || defined(CONFIG_MACH_MESON_8726M_REFC06)
+    .max        =  750000000,
+#elif defined(CONFIG_MACH_MESON_8726M_REFC08)
+    .max        =  800000000,
+#else
+    .max        =  850000000,
+#endif
     .set_rate   = clk_set_rate_a9_clk,
 };
 
@@ -318,24 +402,24 @@ REGISTER_CLK(WIFI);
 
 static struct clk_lookup lookups[] = {
     {
-        .dev_id	= "clk_xtal",
-	.clk	= &xtal_clk,
+        .dev_id = "clk_xtal",
+        .clk    = &xtal_clk,
     },
     {
-        .dev_id	= "clk_sys_pll",
-        .clk	= &clk_sys_pll,
+        .dev_id = "clk_sys_pll",
+        .clk    = &clk_sys_pll,
     },	
     {
-        .dev_id	= "clk_other_pll",
-        .clk	= &clk_other_pll,
+        .dev_id = "clk_other_pll",
+        .clk    = &clk_other_pll,
     },
     {
-        .dev_id	= "clk_ddr_pll",
-        .clk	= &clk_ddr_pll,
+        .dev_id = "clk_ddr_pll",
+        .clk    = &clk_ddr_pll,
     },
     {
-	.dev_id	= "clk81",
-	.clk	= &clk81,
+        .dev_id = "clk81",
+        .clk    = &clk81,
     },
     {
         .dev_id = "a9_clk",
@@ -493,17 +577,20 @@ __setup("a9_clk=", a9_clock_setup);
 static int __init clk81_clock_setup(char *ptr)
 {
     int clock = clkparse(ptr,0);
+    int divider = 4;
 
-    if (other_pll_setting(0, clock*4) == 0) {
+    if (clock<100000000)
+        divider = 8;
+    if (other_pll_setting(0, clock*divider) == 0) {
         /* todo: uart baudrate depends on clk81, assume 115200 baudrate */
         int baudrate = (clock / (115200 * 4)) - 1;
 
-        clk_other_pll.rate = clock * 4;
+        clk_other_pll.rate = clock * divider;
         clk81.rate = clock;
 
         WRITE_MPEG_REG(HHI_MPEG_CLK_CNTL,   // MPEG clk81 set to other/4
                   (1 << 12) |               // select other PLL
-                  ((4 - 1) << 0 ) |         // div1
+                  ((divider - 1) << 0 ) |         // div1
                   (1 << 7 ) |               // cntl_hi_mpeg_div_en, enable gating
                   (1 << 8 ));               // Connect clk81 to the PLL divider output
 

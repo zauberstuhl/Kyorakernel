@@ -2027,6 +2027,7 @@ static __init void m1_init_machine(void)
 #if POLE5_EVT_TEST
 	power_hold();
 #endif
+	pm_power_off = set_bat_off;
 	device_clk_setting();
 	device_pinmux_init();
 	platform_add_devices(platform_devs, ARRAY_SIZE(platform_devs));

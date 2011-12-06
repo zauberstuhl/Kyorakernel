@@ -486,8 +486,8 @@ TI_BOOL os_receivePacket(TI_HANDLE OsContext, void *pRxDesc ,void *pPacket, TI_U
     */
    {
        CL_TRACE_START_L1();
-
-       os_wake_lock_timeout_enable(drv);
+       /* Prevent system suspend one more second after WLAN task completion (in case of more Rx packets) */
+       os_WakeLockTimeoutEnable(drv);
 
        netif_rx_ni(skb);
 
@@ -595,27 +595,30 @@ void os_InterruptServiced (TI_HANDLE OsContext)
 }
 
 /*-----------------------------------------------------------------------------
-Routine Name:  os_wake_lock_timeout
+Routine Name:  os_WakeLockTimeout
 
-Routine Description: Called to prevent system from suspend for 1 sec
+Routine Description: Prevents system suspend for 1 sec if previously enabled 
+                       by call to os_WakeLockTimeoutEnable.
 
 Arguments:     OsContext - handle to OS context
 
-Return Value:  packet counter
+Return Value:  1 if lock was enabled, 0 if not
 -----------------------------------------------------------------------------*/
-int os_wake_lock_timeout (TI_HANDLE OsContext)
+int os_WakeLockTimeout (TI_HANDLE OsContext)
 {
 	TWlanDrvIfObj *drv = (TWlanDrvIfObj *)OsContext;
-	int ret = 0;
 	unsigned long flags;
+	int ret = 0;
 
-	if (drv) {
+	if (drv) 
+    {
 		spin_lock_irqsave(&drv->lock, flags);
 		ret = drv->wl_packet;
-		if (drv->wl_packet) {
+		if (drv->wl_packet) 
+        {
 			drv->wl_packet = 0;
 #ifdef CONFIG_HAS_WAKELOCK
-			wake_lock_timeout(&drv->wl_rxwake, HZ);
+            wake_lock_timeout(&drv->wl_rxwake, HZ);
 #endif
 		}
 		spin_unlock_irqrestore(&drv->lock, flags);
@@ -625,30 +628,32 @@ int os_wake_lock_timeout (TI_HANDLE OsContext)
 }
 
 /*-----------------------------------------------------------------------------
-Routine Name:  os_wake_lock_timeout_enable
+Routine Name:  os_WakeLockTimeoutEnable
 
-Routine Description: Called to set flag for suspend prevention for some time
+Routine Description: Enables prevention of system suspend for 1 sec in next call to os_WakeLockTimeout
 
 Arguments:     OsContext - handle to OS context
 
-Return Value:  packet counter
+Return Value:  1 if lock was enabled, 0 if not
 -----------------------------------------------------------------------------*/
-int os_wake_lock_timeout_enable (TI_HANDLE OsContext)
+int os_WakeLockTimeoutEnable (TI_HANDLE OsContext)
 {
 	TWlanDrvIfObj *drv = (TWlanDrvIfObj *)OsContext;
 	unsigned long flags;
 	int ret = 0;
 
-	if (drv) {
+	if (drv) 
+    {
 		spin_lock_irqsave(&drv->lock, flags);
 		ret = drv->wl_packet = 1;
 		spin_unlock_irqrestore(&drv->lock, flags);
 	}
+	/* printk("%s: %d\n", __func__, ret);  */
 	return ret;
 }
 
 /*-----------------------------------------------------------------------------
-Routine Name:  os_wake_lock
+Routine Name:  os_WakeLock
 
 Routine Description: Called to prevent system from suspend
 
@@ -656,17 +661,20 @@ Arguments:     OsContext - handle to OS context
 
 Return Value:  wake_lock counter
 -----------------------------------------------------------------------------*/
-int os_wake_lock (TI_HANDLE OsContext)
+int os_WakeLock (TI_HANDLE OsContext)
 {
 	TWlanDrvIfObj *drv = (TWlanDrvIfObj *)OsContext;
 	int ret = 0;
 	unsigned long flags;
 
-	if (drv) {
+	if (drv) 
+    {
 		spin_lock_irqsave(&drv->lock, flags);
 #ifdef CONFIG_HAS_WAKELOCK
 		if (!drv->wl_count)
+        {
 			wake_lock(&drv->wl_wifi);
+        }
 #endif
 		drv->wl_count++;
 		ret = drv->wl_count;
@@ -677,7 +685,7 @@ int os_wake_lock (TI_HANDLE OsContext)
 }
 
 /*-----------------------------------------------------------------------------
-Routine Name:  os_wake_unlock
+Routine Name:  os_WakeUnlock
 
 Routine Description: Called to allow system to suspend
 
@@ -685,19 +693,23 @@ Arguments:     OsContext - handle to OS context
 
 Return Value:  wake_lock counter
 -----------------------------------------------------------------------------*/
-int os_wake_unlock (TI_HANDLE OsContext)
+int os_WakeUnlock (TI_HANDLE OsContext)
 {
 	TWlanDrvIfObj *drv = (TWlanDrvIfObj *)OsContext;
 	int ret = 0;
 	unsigned long flags;
 
-	if (drv) {
+	if (drv) 
+    {
 		spin_lock_irqsave(&drv->lock, flags);
-		if (drv->wl_count) {
+		if (drv->wl_count) 
+        {
 			drv->wl_count--;
 #ifdef CONFIG_HAS_WAKELOCK
 			if (!drv->wl_count)
+            {
 				wake_unlock(&drv->wl_wifi);
+            }
 #endif
 			ret = drv->wl_count;
 		}
@@ -706,6 +718,14 @@ int os_wake_unlock (TI_HANDLE OsContext)
 	/* printk("%s: %d\n", __func__, ret); */
 	return ret;
 }
+
+int os_getWakeLockCounter(TI_HANDLE OsContext)
+{
+    TWlanDrvIfObj *drv = (TWlanDrvIfObj *)OsContext;
+
+    return drv->wl_count;
+}
+
 
 /*-----------------------------------------------------------------------------
 Routine Name:  os_RequestSchedule

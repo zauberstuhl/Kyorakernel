@@ -31,6 +31,7 @@ fw-shipped-$(CONFIG_SDIO_DHD_CDC_WIFI_4329) += broadcm_4329/sdio-g-cdc-full11n-r
 fw-shipped-$(CONFIG_SDIO_ATHEROS_6302_WIFI) += atheros_6302/otp.bin.z77 atheros_6302/athwlan.bin.z77 atheros_6302/data.patch.bin atheros_6302/bdata.SD31.bin
 fw-shipped-$(CONFIG_SDIO_ATHEROS_6102_WIFI) += atheros_6102/calData_ar6102_15dBm.bin atheros_6102/athwlan.bin.z77 atheros_6102/data.patch.hw2_0.bin
 fw-shipped-$(CONFIG_SDIO_MARVELL_NH387_WIFI) += mrvl/sd8787_uapsta.bin mrvl/sd8787_uapsta_w1.bin
+fw-shipped-$(CONFIG_RALINK_3070_USB_WIFI) += ralink/3070/RT2870STA.dat
 fw-shipped-$(CONFIG_3C359) += 3com/3C359.bin
 fw-shipped-$(CONFIG_ACENIC) += $(acenic-objs)
 fw-shipped-$(CONFIG_ADAPTEC_STARFIRE) += adaptec/starfire_rx.bin \
@@ -171,7 +172,7 @@ quiet_cmd_fwbin = MK_FW   $@
 		  echo "    .section .rodata"				>>$@;\
 		  echo "    .p2align $${ASM_ALIGN}"			>>$@;\
 		  echo "_fw_$${FWSTR}_bin:"				>>$@;\
-		  echo "    .incbin \"$(2)\""				>>$@;\
+		  echo "    .incbin \"$(pwd)/../$(2)\""			>>$@;\
 		  echo "_fw_end:"					>>$@;\
 		  echo "   .section .rodata.str,\"aMS\",$${PROGBITS},1"	>>$@;\
 		  echo "    .p2align $${ASM_ALIGN}"			>>$@;\

@@ -19,8 +19,9 @@
 #include <linux/saradc.h>
 #include <linux/adc_ts.h>
 
-#define TS_POLL_DELAY		1 /* ms delay between samples */
+#define TS_POLL_DELAY		30 /* ms delay between samples */
 #define TS_POLL_PERIOD		5 /* ms delay between samples */
+//#define DEBUG
 
 #define	MAX_10BIT			((1 << 10) - 1)
 
@@ -37,12 +38,15 @@ struct ts_event {
 };
 
 struct adcts {
+	struct hrtimer		timer;
 	struct input_dev *input;
 	char phys[32];
-	struct delayed_work work;
 	struct ts_event event;
 	struct ts_event event_cache;
 	bool pendown;
+	bool poll_delay_flag;
+	bool test_mode;
+	u32 timer_count;
 	int seq;
 	
 	u16 x_plate_ohms;
@@ -64,6 +68,73 @@ struct adcts {
 #define adcts_clear_cache(ts) do { \
     memset(&ts->event_cache, 0 , sizeof(struct ts_event)); \
 } while(0)
+
+#include <mach/am_regs.h>
+static ssize_t adcts_read(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	printk(KERN_ALERT"read failed\n");
+  return 0;
+}
+
+static ssize_t adcts_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int i;
+	u32 value;
+	struct adcts *ts = (struct adcts *)dev_get_drvdata(dev);
+	
+	if (!strcmp(attr->attr.name, "cmd")) {
+		sscanf(buf, "%d", &i);
+		if (i == 100) {
+			ts->test_mode = 1;
+			printk(KERN_ALERT"enter test mode, seq=%d\n", ts->seq);
+		}
+		if (i == 101) {
+			ts->seq = 0;
+			ts->service(CMD_SET_PENIRQ);
+			ts->test_mode = 0;
+			printk(KERN_ALERT"exit test mode\n");
+		}
+		if (i == 102) {
+			printk(KERN_INFO "timer count = %d\n", ts->timer_count);
+		}
+		if (i == 103) {
+			printk(KERN_INFO "restart timer\n");
+			hrtimer_start(&ts->timer, ktime_set(0, ts->poll_period*1000000), HRTIMER_MODE_REL);
+		}
+		else {
+			value = ts->service(i);
+			printk(KERN_ALERT"command(%d)return %d\n", i, value);
+		}
+	}
+	else if (!strcmp(attr->attr.name, "reg")) {
+		if (buf[0] == 'r') {
+			for (i=SAR_ADC_REG0; i<SAR_ADC_REG0+11; i++)
+				printk(KERN_ALERT"read register[0x%x]: 0x%x\n", i,READ_CBUS_REG(i));
+		}
+		else if (buf[0] == 'w') {
+			sscanf(buf+2, "%x", &i);
+			sscanf(buf+4, "%x", &value);
+			printk(KERN_ALERT"write register[0x%x]: 0x%x\n", i, value);
+			WRITE_CBUS_REG(i+SAR_ADC_REG0, value);
+		}
+	}
+	return count;
+}
+
+static DEVICE_ATTR(cmd, S_IRWXUGO, adcts_read, adcts_write);
+static DEVICE_ATTR(reg, S_IRWXUGO, adcts_read, adcts_write);
+
+static struct attribute *adcts_attr[] = {
+	&dev_attr_cmd.attr,
+	&dev_attr_reg.attr,
+	NULL
+};
+
+static struct attribute_group adcts_attr_group = {
+	.name = NULL,
+	.attrs = adcts_attr,
+};
+
 
 static u32 adcts_calculate_pressure(struct adcts *ts, struct ts_event *tc)
 {
@@ -88,19 +159,17 @@ static u32 adcts_calculate_pressure(struct adcts *ts, struct ts_event *tc)
 static void adcts_send_up_event(struct adcts *ts)
 {
 	struct input_dev *input = ts->input;
-
+#ifdef DEBUG
 	dev_dbg(&ts->input->dev, "UP\n");
-
+#endif
 	input_report_key(input, BTN_TOUCH, 0);
 	input_report_abs(input, ABS_PRESSURE, 0);
 	input_sync(input);
 }
 
 
-static void adcts_work(struct work_struct *work)
+static void adcts_work(struct adcts *ts)
 {
-	struct adcts *ts =
-		container_of(to_delayed_work(work), struct adcts, work);
 	struct input_dev *input = ts->input;
 	u32 rt;
 
@@ -117,13 +186,20 @@ static void adcts_work(struct work_struct *work)
 	 * in that case we have rely on the pressure anyway.
 	 */
 
+	ts->timer_count++;	
+	if (ts->test_mode) {
+		return;
+	}
 	
 	if (ts->seq == 0) { 
 		if (ts->service(CMD_GET_PENDOWN)) {
 			if (!ts->pendown) {
 				ts->pendown = 1;
+				ts->poll_delay_flag = 1;
 				input_report_key(input, BTN_TOUCH, 1);
+				#ifdef DEBUG
 				printk(KERN_INFO "DOWN\n");
+				#endif
 			}
 			ts->seq ++;
 			ts->service(CMD_CLEAR_PENIRQ);
@@ -132,7 +208,9 @@ static void adcts_work(struct work_struct *work)
 			ts->pendown = 0;
 			adcts_send_up_event(ts);
 			adcts_clear_cache(ts);
+			#ifdef DEBUG
 			printk(KERN_INFO "UP\n");
+			#endif
 		}
 	}
 	
@@ -158,50 +236,28 @@ static void adcts_work(struct work_struct *work)
             		rt = 500;	//debug
             		input_report_abs(input, ABS_PRESSURE, rt);
             		input_sync(input);
+            		#ifdef DEBUG
             		printk(KERN_INFO "x=%d, y=%d\n", ts->event.x, ts->event.y);
+            		#endif
                   }
 		ts->seq = 0;
 		ts->service(CMD_SET_PENIRQ);
 	}
-
-	if (ts->pendown || (ts->irq < 0)) {
-		schedule_delayed_work(&ts->work,
-				      msecs_to_jiffies(ts->poll_period));
-	}
-	else {
-		ts->service(CMD_SET_PENIRQ);
-		enable_irq(ts->irq);
-		adcts_clear_cache(ts);
-		printk(KERN_INFO "exit adc irq\n");
-	}
 }
 
-
-static irqreturn_t adcts_irq(int irq, void *handle)
+static enum hrtimer_restart adcts_timer(struct hrtimer *timer)
 {
-	struct adcts *ts = handle;
-	printk(KERN_INFO "enter adc irq\n");
+    struct adcts *ts = container_of(timer, struct adcts, timer);
+    
+    adcts_work(ts);
+    if ((ts->seq == 1) && (ts->poll_delay_flag == 1)) {
+    	ts->poll_delay_flag = 0;
+			hrtimer_start(&ts->timer, ktime_set(0, ts->poll_delay * 1000000), HRTIMER_MODE_REL);
+		}
+		else
+			hrtimer_start(&ts->timer, ktime_set(0, ts->poll_period * 1000000), HRTIMER_MODE_REL);
 
-	if (ts->service(CMD_GET_PENDOWN)) {
-		disable_irq_nosync(ts->irq);
-		schedule_delayed_work(&ts->work,
-				      msecs_to_jiffies(ts->poll_delay));
-	}
-	
-	return IRQ_HANDLED;
-}
-
-static void adcts_free_irq(struct adcts *ts)
-{
-	free_irq(ts->irq, ts);
-	if (cancel_delayed_work_sync(&ts->work)) {
-		/*
-		 * Work was pending, therefore we need to enable
-		 * IRQ here to balance the disable_irq() done in the
-		 * interrupt handler.
-		 */
-		enable_irq(ts->irq);
-	}
+    return HRTIMER_NORESTART;
 }
 
 static int __devinit adcts_probe(struct platform_device *pdev)
@@ -225,7 +281,6 @@ static int __devinit adcts_probe(struct platform_device *pdev)
 	ts->input = input_dev;
 
 	platform_set_drvdata(pdev, ts);
-	INIT_DELAYED_WORK(&ts->work, adcts_work);
 
 	ts->x_plate_ohms = pdata->x_plate_ohms;
 	ts->service = saradc_ts_service;
@@ -252,28 +307,27 @@ static int __devinit adcts_probe(struct platform_device *pdev)
 
 	ts->seq = 0;
 	ts->pendown = 0;
+	ts->poll_delay_flag = 0;
+	ts->test_mode = 0;
+	ts->timer_count = 0;
 	ts->irq = pdata->irq;
 	ts->service(CMD_INIT_PENIRQ);
-	if (ts->irq < 0) {
-		schedule_delayed_work(&ts->work,
-			      msecs_to_jiffies(ts->poll_delay));
-	}
-	else {
-		err = request_irq(ts->irq, adcts_irq, 0, pdev->dev.driver->name, ts);
-		if (err < 0) {
-			dev_err(&pdev->dev, "irq %d busy?\n", ts->irq);
-			goto err_free_mem;
-		}
-	}
+	hrtimer_init(&ts->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	ts->timer.function = adcts_timer;
 
 	err = input_register_device(input_dev);
 	if (err)
 		goto err_free_irq;
 
+	struct device *dev = &pdev->dev;
+  sysfs_create_group(&dev->kobj, &adcts_attr_group);
+	dev_set_drvdata(dev, ts);
+
+	hrtimer_start(&ts->timer, ktime_set(0, ts->poll_period*1000000), HRTIMER_MODE_REL);
 	return 0;
 
  err_free_irq:
-	adcts_free_irq(ts);
+//	adcts_free_irq(ts);
  err_free_mem:
 	input_free_device(input_dev);
 	kfree(ts);
@@ -283,7 +337,7 @@ static int __devinit adcts_probe(struct platform_device *pdev)
 static int __devexit adcts_remove(struct platform_device *pdev)
 {
 	struct adcts *ts = platform_get_drvdata(pdev);
-	adcts_free_irq(ts);
+//	adcts_free_irq(ts);
 	input_unregister_device(ts->input);
 	kfree(ts);
 

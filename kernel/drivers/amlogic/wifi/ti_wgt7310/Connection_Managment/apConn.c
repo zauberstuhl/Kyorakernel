@@ -263,6 +263,8 @@ static void		 apConn_reportConnStatusToSME	 (apConn_t *pAPConnection);
 /* Public functions prototypes 	 */
 /*-------------------------------*/
 
+TI_STATUS conn_ReportApConnStatus(TI_HANDLE	hConn, mgmtStatus_e status, TI_UINT16 uStatusCode);
+
 /**
 *
 * apConn_create
@@ -297,6 +299,7 @@ TI_HANDLE apConn_create(TI_HANDLE hOs)
         if (pAPConnection->hAPConnSM == NULL)
         {
             WLAN_OS_REPORT(("FATAL ERROR: apConn_create(): Error allocating Connection StateMachine! - aborting\n"));
+			os_memoryFree(hOs, pAPConnection, sizeof(apConn_t));
             return NULL;
         }
 
@@ -1283,7 +1286,7 @@ TI_STATUS apConn_reportRoamingEvent(TI_HANDLE hAPConnection,
             de-auth arrived. */
         if (pAPConnection->currentState == AP_CONNECT_STATE_IDLE)
 		{
-			sme_ReportApConnStatus(pAPConnection->hSme, STATUS_DISCONNECT_DURING_CONNECT, pAPConnection->APDisconnect.uStatusCode);
+			conn_ReportApConnStatus(pAPConnection->hConnSm, STATUS_DISCONNECT_DURING_CONNECT, pAPConnection->APDisconnect.uStatusCode);
 		}
         else
         {

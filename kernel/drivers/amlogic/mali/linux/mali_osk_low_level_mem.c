@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 ARM Limited. All rights reserved.
+ * Copyright (C) 2010-2011 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -21,7 +21,6 @@
 #include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
-#include <asm/cacheflush.h>
 
 #include "mali_osk.h"
 #include "mali_ukk.h" /* required to hook in _mali_ukk_mem_mmap handling */
@@ -37,6 +36,7 @@ static int mali_kernel_memory_cpu_page_fault_handler(struct vm_area_struct *vma,
 #else
 static unsigned long mali_kernel_memory_cpu_page_fault_handler(struct vm_area_struct * vma, unsigned long address);
 #endif
+
 
 typedef struct mali_vma_usage_tracker
 {
@@ -68,6 +68,23 @@ struct MappingInfo
 
 typedef struct MappingInfo MappingInfo;
 
+
+static u32 _kernel_page_allocate(void);
+static void _kernel_page_release(u32 physical_address);
+static AllocationList * _allocation_list_item_get(void);
+static void _allocation_list_item_release(AllocationList * item);
+
+
+/* Variable declarations */
+spinlock_t allocation_list_spinlock; 
+static AllocationList * pre_allocated_memory = (AllocationList*) NULL ;
+static int pre_allocated_memory_size_current  = 0;
+#ifdef MALI_OS_MEMORY_KERNEL_BUFFER_SIZE_IN_MB
+	static int pre_allocated_memory_size_max      = MALI_OS_MEMORY_KERNEL_BUFFER_SIZE_IN_MB * 1024 * 1024;
+#else
+	static int pre_allocated_memory_size_max      = 6 * 1024 * 1024; /* 6 MiB */
+#endif
+
 static struct vm_operations_struct mali_kernel_vm_ops =
 {
 	.open = mali_kernel_memory_vma_open,
@@ -78,6 +95,108 @@ static struct vm_operations_struct mali_kernel_vm_ops =
 	.nopfn = mali_kernel_memory_cpu_page_fault_handler
 #endif
 };
+
+
+void mali_osk_low_level_mem_init(void)
+{
+	spin_lock_init( &allocation_list_spinlock );
+	pre_allocated_memory = (AllocationList*) NULL ;
+}
+
+void mali_osk_low_level_mem_term(void)
+{
+	while ( NULL != pre_allocated_memory )
+	{
+		AllocationList *item;
+		item = pre_allocated_memory;
+		pre_allocated_memory = item->next;
+		_kernel_page_release(item->physaddr);
+		_mali_osk_free( item );
+	}
+	pre_allocated_memory_size_current  = 0;
+}
+
+static u32 _kernel_page_allocate(void)
+{
+	struct page *new_page;
+	u32 linux_phys_addr;
+	
+	new_page = alloc_page(GFP_HIGHUSER | __GFP_ZERO | __GFP_REPEAT | __GFP_NOWARN | __GFP_COLD);
+	
+	if ( NULL == new_page )
+	{
+		return 0;
+	}
+
+	/* Ensure page is flushed from CPU caches. */
+	linux_phys_addr = dma_map_page(NULL, new_page, 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
+
+	return linux_phys_addr;
+}
+
+static void _kernel_page_release(u32 physical_address)
+{
+	struct page *unmap_page;
+
+	#if 1
+	dma_unmap_page(NULL, physical_address, PAGE_SIZE, DMA_BIDIRECTIONAL);
+	#endif
+	
+	unmap_page = pfn_to_page( physical_address >> PAGE_SHIFT );
+	MALI_DEBUG_ASSERT_POINTER( unmap_page );
+	__free_page( unmap_page );
+}
+
+static AllocationList * _allocation_list_item_get(void)
+{
+	AllocationList *item = NULL;
+	unsigned long flags;
+	
+	spin_lock_irqsave(&allocation_list_spinlock,flags);
+	if ( pre_allocated_memory )
+	{
+		item = pre_allocated_memory;
+		pre_allocated_memory = pre_allocated_memory->next;
+		pre_allocated_memory_size_current -= PAGE_SIZE;
+		
+		spin_unlock_irqrestore(&allocation_list_spinlock,flags);
+		return item;
+	}
+	spin_unlock_irqrestore(&allocation_list_spinlock,flags);
+	
+	item = _mali_osk_malloc( sizeof(AllocationList) );
+	if ( NULL == item)
+	{
+		return NULL;
+	}
+
+	item->physaddr = _kernel_page_allocate();
+	if ( 0 == item->physaddr )
+	{
+		/* Non-fatal error condition, out of memory. Upper levels will handle this. */
+		_mali_osk_free( item );
+		return NULL;
+	}
+	return item;
+}
+
+static void _allocation_list_item_release(AllocationList * item)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&allocation_list_spinlock,flags);
+	if ( pre_allocated_memory_size_current < pre_allocated_memory_size_max)
+	{
+		item->next = pre_allocated_memory;
+		pre_allocated_memory = item;
+		pre_allocated_memory_size_current += PAGE_SIZE;
+		spin_unlock_irqrestore(&allocation_list_spinlock,flags);
+		return;
+	}
+	spin_unlock_irqrestore(&allocation_list_spinlock,flags);
+	
+	_kernel_page_release(item->physaddr);
+	_mali_osk_free( item );
+}
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
@@ -357,52 +476,30 @@ _mali_osk_errcode_t _mali_osk_mem_mapregion_map( mali_memory_allocation * descri
 	if ( MALI_MEMORY_ALLOCATION_OS_ALLOCATED_PHYSADDR_MAGIC == *phys_addr )
 	{
 		_mali_osk_errcode_t ret;
+		AllocationList *alloc_item;
 		u32 linux_phys_frame_num;
-		u32 linux_phys_addr;
-		AllocationList *allocItem;
-		struct page *new_page;
 
-		allocItem = _mali_osk_malloc( sizeof(AllocationList) );
-		if ( NULL == allocItem )
-		{
-			/* Out of memory. Try another allocator */
-			return _MALI_OSK_ERR_NOMEM;
-		}
+		alloc_item = _allocation_list_item_get();
 
-		{
-			new_page = alloc_page(GFP_HIGHUSER | __GFP_ZERO | __GFP_REPEAT | __GFP_NOWARN | __GFP_COLD);
-
-			if ( NULL == new_page )
-			{
-				/* Non-fatal error condition, out of memory. Upper levels will handle this. */
-				_mali_osk_free( allocItem );
-				return _MALI_OSK_ERR_NOMEM;
-			}
-
-			/* Ensure page is flushed from CPU caches. */
-			linux_phys_addr = dma_map_page(NULL, new_page, 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
-
-			linux_phys_frame_num = linux_phys_addr >> PAGE_SHIFT;
-		}
+		linux_phys_frame_num = alloc_item->physaddr >> PAGE_SHIFT;
 
 		ret = ( remap_pfn_range( vma, ((u32)descriptor->mapping) + offset, linux_phys_frame_num, size, vma->vm_page_prot) ) ? _MALI_OSK_ERR_FAULT : _MALI_OSK_ERR_OK;
 
 		if ( ret != _MALI_OSK_ERR_OK)
 		{
-			dma_unmap_page(NULL, linux_phys_addr, PAGE_SIZE, DMA_BIDIRECTIONAL);
-			__free_page( new_page );
-			_mali_osk_free( allocItem );
+			_allocation_list_item_release(alloc_item);
 			return ret;
 		}
 
-		/* Put our allocItem into the list of allocations on success */
-		allocItem->next = mappingInfo->list;
-		allocItem->offset = offset;
-		allocItem->physaddr = linux_phys_addr;
-		mappingInfo->list = allocItem;
+		/* Put our alloc_item into the list of allocations on success */
+		alloc_item->next = mappingInfo->list;
+		alloc_item->offset = offset;
+
+		/*alloc_item->physaddr = linux_phys_addr;*/
+		mappingInfo->list = alloc_item;
 
 		/* Write out new physical address on success */
-		*phys_addr = linux_phys_addr;
+		*phys_addr = alloc_item->physaddr;
 
 		return ret;
 	}
@@ -462,13 +559,7 @@ void _mali_osk_mem_mapregion_unmap( mali_memory_allocation * descriptor, u32 off
 				continue;
 			}
 
-			{
-				struct page *unmap_page;
-				unmap_page = pfn_to_page( alloc->physaddr >> PAGE_SHIFT );
-				MALI_DEBUG_ASSERT_POINTER( unmap_page );
-				dma_unmap_page(NULL, alloc->physaddr, PAGE_SIZE, DMA_BIDIRECTIONAL);
-				__free_page( unmap_page );
-			}
+			_kernel_page_release(alloc->physaddr);
 
 			/* Remove the allocation from the list */
 			*prev = alloc->next;

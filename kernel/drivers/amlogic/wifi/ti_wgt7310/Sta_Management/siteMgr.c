@@ -755,6 +755,19 @@ TI_STATUS siteMgr_setParam(TI_HANDLE        hSiteMgr,
 
         return TI_OK;
 
+    case SITE_MGR_PROBE_REQ_EXTRA_IES: 
+        if (pParam->paramLength > MAX_TEMPLATES_SIZE)
+        {
+            TRACE2(pSiteMgr->hReport, REPORT_SEVERITY_ERROR, 
+                   "Set SITE_MGR_PROBE_REQ_EXTRA_IES: Extra IEs length provided (%d) is larger than maximum Probe Request length(%d) \n",
+                    pParam->paramLength, MAX_BEACON_BODY_LENGTH);
+            return TI_NOK;
+        }
+        pSiteMgr->uProbeReqExtraIesLen = pParam->paramLength;
+        os_memoryCopy(pSiteMgr->hOs, pSiteMgr->probeReqExtraIes, pParam->content.pProbeReqExtraIes, pSiteMgr->uProbeReqExtraIesLen);
+        setDefaultProbeReqTemplate (hSiteMgr);
+        return TI_OK;
+		
     case SITE_MGR_DESIRED_MODULATION_TYPE_PARAM:
         if ((pParam->content.siteMgrDesiredModulationType < DRV_MODULATION_CCK) ||
             (pParam->content.siteMgrDesiredModulationType > DRV_MODULATION_OFDM))

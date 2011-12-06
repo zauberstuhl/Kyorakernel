@@ -49,6 +49,8 @@ struct ts_platform_data {
     bool cache_enable;
     struct ts_info info;
     void *data;
+    void (*power_on)(void);
+    void (*power_off)(void); 
 };
 
 struct ts_chip {

@@ -361,7 +361,7 @@ static int aml_i2c_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs,
 	unsigned int i;
 	unsigned int ret=0;
 	
-	spin_lock(&i2c->lock);
+	mutex_lock(&i2c->lock);
 	
 	i2c->ops->xfer_prepare(i2c);
 
@@ -379,7 +379,7 @@ static int aml_i2c_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs,
 	
 	i2c->ops->stop(i2c);
 
-	spin_unlock(&i2c->lock);
+	mutex_unlock(&i2c->lock);
 	
 	if (p->flags & I2C_M_RD){
 		AML_I2C_DBG("read ");
@@ -412,7 +412,7 @@ static int aml_i2c_xfer_slow(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs,
 	unsigned int ret=0;
 	unsigned int last_speed = i2c->master_i2c_speed;
 	
-	spin_lock(&i2c->lock);
+	mutex_lock(&i2c->lock);
 
 	i2c->master_i2c_speed = AML_I2C_SPPED_100K;/* change speed in i2c->lock*/
 	i2c->ops->xfer_prepare(i2c);
@@ -431,7 +431,7 @@ static int aml_i2c_xfer_slow(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs,
 	
 	i2c->ops->stop(i2c);
 
-	spin_unlock(&i2c->lock);
+	mutex_unlock(&i2c->lock);
 
 	AML_I2C_DBG("aml_i2c_xfer_slow");
 	if (p->flags & I2C_M_RD){
@@ -575,7 +575,7 @@ static ssize_t store_register(struct class *class,
 			struct class_attribute *attr,	const char *buf, size_t count)
 {
 	unsigned int reg, val, ret;
-
+	int n=1,i;
 	if(buf[0] == 'w'){
 		ret = sscanf(buf, "w %x %x", &reg, &val);
 		//printk("sscanf w reg = %x, val = %x\n",reg, val);
@@ -583,10 +583,13 @@ static ssize_t store_register(struct class *class,
 		WRITE_CBUS_REG(reg, val);
 	}
 	else{
-		ret =  sscanf(buf, "%x", &reg);
-		//printk("sscanf r reg = %x\n", reg);
-		val = READ_CBUS_REG(reg);
-		printk("read cbus reg 0x%x value %x\n", reg, val);
+		ret =  sscanf(buf, "%x %d", &reg,&n);
+		printk("read %d cbus register from reg: %x \n",n,reg);
+		for(i=0;i<n;i++)
+		{
+			val = READ_CBUS_REG(reg+i);
+			printk("reg 0x%x : 0x%x\n", reg+i, val);
+		}
 	}
 	
 	if (ret != 1 || ret !=2)
@@ -695,7 +698,7 @@ static int aml_i2c_probe(struct platform_device *pdev)
 	aml_i2c_set_platform_data(i2c, plat);
 
 	/*lock init*/
-	spin_lock_init(&i2c->lock);
+	mutex_init(&i2c->lock);
 
 	aml_i2c_hw_init(i2c , i2c->use_pio);
 

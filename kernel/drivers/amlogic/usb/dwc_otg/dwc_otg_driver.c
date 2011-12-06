@@ -60,7 +60,7 @@
 #include <asm/io.h>
 #include <mach/lm.h>
 #include <asm/sizes.h>
-
+ 
 #include "linux/dwc_otg_plat.h"
 #include "dwc_otg_attr.h"
 #include "dwc_otg_driver.h"
@@ -470,7 +470,7 @@ break; case DWC_OTG_CAP_PARAM_NO_HNP_SRP_CAPABLE:
 					     (&core_if->
 					      core_global_regs->gnptxfsiz) >>
 					     16));
-/*
+#if 0
 	retval += DWC_OTG_PARAM_CHECK_VALID(host_rx_fifo_size,
 					    "host_rx_fifo_size",
 					    (dwc_otg_module_params.host_rx_fifo_size
@@ -479,7 +479,7 @@ break; case DWC_OTG_CAP_PARAM_NO_HNP_SRP_CAPABLE:
 					     (&core_if->core_global_regs->grxfsiz)),
 					    dwc_read_reg32
 					    (&core_if->core_global_regs->grxfsiz));
-*/
+#endif
 	retval += DWC_OTG_PARAM_CHECK_VALID(host_nperio_tx_fifo_size,
 					    "host_nperio_tx_fifo_size",
 					    (dwc_otg_module_params.host_nperio_tx_fifo_size
@@ -1002,7 +1002,7 @@ static int __init dwc_otg_driver_probe(struct lm_device *_lmdev)
 			    ("Chip mode not match! -- Want Device mode but not.  --\n");
 			goto fail;
 		}
-		//dwc_otg_device_soft_disconnect(dwc_otg_device->core_if );
+		dwc_otg_device_soft_disconnect(dwc_otg_device->core_if );
 
 		retval = dwc_otg_pcd_init(_lmdev);
 		if (retval != 0) {
@@ -1024,7 +1024,7 @@ static int __init dwc_otg_driver_probe(struct lm_device *_lmdev)
 			goto fail;
 		}
 
-		//dwc_otg_device_soft_disconnect(dwc_otg_device->core_if);
+		dwc_otg_device_soft_disconnect(dwc_otg_device->core_if);
 		retval = dwc_otg_pcd_init(_lmdev);
 		if (retval != 0) {
 			DWC_ERROR("dwc_otg_pcd_init failed(in otg mode)\n");
@@ -1098,7 +1098,7 @@ static int __init dwc_otg_driver_init(void)
 	return retval;
 }
 
-subsys_initcall(dwc_otg_driver_init);
+module_init(dwc_otg_driver_init);
 
 /** 
  * This function is called when the driver is removed from the kernel

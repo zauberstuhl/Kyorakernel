@@ -47,6 +47,12 @@ static struct wake_lock amvdec_lock;
 struct timer_list amvdevtimer;
 #define WAKE_CHECK_INTERVAL (100*HZ/100)
 #endif
+#define AMVDEC_USE_STATIC_MEMORY
+static void *mc_addr=NULL;
+static dma_addr_t mc_addr_map;
+
+static int video_running=0;
+static int video_stated_changed=1;
 
 static void amvdec_pg_enable(bool enable)
 {
@@ -142,11 +148,14 @@ int amvdec_wake_unlock(void)
 s32 amvdec_loadmc(const u32 *p)
 {
     ulong timeout;
-    void *mc_addr;
-    dma_addr_t mc_addr_map;
     s32 ret = 0;
-
-    mc_addr = kmalloc(MC_SIZE, GFP_KERNEL);
+#ifdef AMVDEC_USE_STATIC_MEMORY
+	if(mc_addr==NULL)
+#endif
+	{
+		mc_addr = kmalloc(MC_SIZE, GFP_KERNEL);
+		printk("Alloc new mc addr to %p\n",mc_addr);
+	}
     if (!mc_addr) {
         return -ENOMEM;
     }
@@ -179,8 +188,10 @@ s32 amvdec_loadmc(const u32 *p)
     }
 
     dma_unmap_single(NULL, mc_addr_map, MC_SIZE, DMA_TO_DEVICE);
-
-    kfree(mc_addr);
+#ifndef AMVDEC_USE_STATIC_MEMORY
+	kfree(mc_addr);
+	mc_addr=NULL;
+#endif	
 
     return ret;
 }
@@ -286,24 +297,32 @@ static int vdec_is_paused(void)
 
 int amvdev_pause(void)
 {
-    mod_timer(&amvdevtimer, jiffies + WAKE_CHECK_INTERVAL);
+    video_running=0;
+    video_stated_changed=1;
     return 0;
 }
 int amvdev_resume(void)
 {
-    amvdec_wake_lock();
-    del_timer_sync(&amvdevtimer);
+    video_running=1;
+    video_stated_changed=1;
     return 0;
 }
 
 static void vdec_paused_check_timer(unsigned long arg)
 {
-    if (vdec_is_paused()) {
-        printk("vdec paused and release wakelock now\n");
-        amvdec_wake_unlock();
-    } else {
-        mod_timer(&amvdevtimer, jiffies + WAKE_CHECK_INTERVAL);
+    if(video_stated_changed){
+	if(!video_running){
+    		if (vdec_is_paused()) {
+        		printk("vdec paused and release wakelock now\n");
+        		amvdec_wake_unlock();
+			video_stated_changed=0;
+	    	}
+         }else{
+	    	amvdec_wake_lock();
+            	video_stated_changed=0; 
+	}
     }
+    mod_timer(&amvdevtimer, jiffies + WAKE_CHECK_INTERVAL);
 }
 #else
 int amvdev_pause(void)

@@ -151,7 +151,6 @@ static void t13_setup_gama_table(tcon_conf_t *pConf)
 
 void power_on_backlight(void)
 {
-    msleep(200);
     set_gpio_val(GPIOA_bank_bit(7), GPIOA_bit_bit0_14(7), 1);
     set_gpio_mode(GPIOA_bank_bit(7), GPIOA_bit_bit0_14(7), GPIO_OUTPUT_MODE);
 }
@@ -168,34 +167,29 @@ static void power_on_lcd(void)
     
     //Power on sequence: STBYB -> VDD -> AVDD -> VGL -> VGH -> DATA -> B/L
     //LCD_3.3V: LCD_VCC_EN -> EIO_OD0: 0   
-         #ifdef CONFIG_SN7325
-        printk("power on 7325 1\n");
-        configIO(1, 0);
-        setIO_level(1, 0, 1);//PP1
-        #endif
 #ifdef CONFIG_SN7325
+        printk("power on 7325 power_on_lcd\n");
         configIO(0, 0);
         setIO_level(0, 0, 0);//OD0
 #endif
     msleep(50);
 #ifdef CONFIG_SN7325
-        configIO(1, 0);
-        setIO_level(1, 1, 4);//PP4
+        configIO(0, 0);
+        setIO_level(0, 1, 4);//PP4-->OD4
 #endif
     //AVDD_power: LCD_PWR_EN -> EIO_PP4: 1
     
     msleep(20);
 #ifdef CONFIG_SN7325
         configIO(1, 0);
-        setIO_level(1, 1, 7);//PP7
+        setIO_level(1, 1, 5);//PP7-->pp5
 #endif
     //VGH_EN: LCD_VGH_EN -> EIO_PP7: 1
     
     msleep(20);
 #ifdef CONFIG_SN7325
-        printk("power on 7325 1\n");
-        configIO(0, 0);
-        setIO_level(0, 1, 5);//OD5
+        configIO(1, 0);
+        setIO_level(1, 1, 6);//OD5-->PP6
 #endif
     //DATA: LCD_DISP_ON -> EIO_OD5: 1
     msleep(50);
@@ -208,20 +202,21 @@ static void power_off_lcd(void)
     msleep(20);
     //DATA: LCD_DISP_ON -> EIO_OD5: 0
 #ifdef CONFIG_SN7325
-        configIO(0, 0);
-        setIO_level(0, 0, 5);//OD5
+printk("power off 7325 power_off_lcd\n");
+        configIO(1, 0);
+        setIO_level(1, 0, 6);//OD5-->PP6
 #endif
     msleep(10);
     //VGH_EN: LCD_VGH_EN -> EIO_PP7: 0
 #ifdef CONFIG_SN7325
         configIO(1, 0);
-        setIO_level(1, 0, 7);//PP7
+        setIO_level(1, 0, 5);//PP7-->pp5
 #endif
     msleep(20);
     //AVDD_power: LCD_PWR_EN -> EIO_PP4: 0
 #ifdef CONFIG_SN7325
-        configIO(1, 0);
-        setIO_level(1, 0, 4);//PP4
+        configIO(0, 0);
+        setIO_level(0, 0, 4);//PP4-->OD4
 #endif
     msleep(20);
     //LCD_3.3V: LCD_VCC_EN -> EIO_OD0: 1
@@ -229,7 +224,6 @@ static void power_off_lcd(void)
         configIO(0, 0);
         setIO_level(0, 1, 0);//OD0
 #endif
-    
 }
 
 static void set_tcon_pinmux(void)
@@ -244,12 +238,11 @@ static void t13_power_on(void)
     video_dac_disable();
 	set_tcon_pinmux();
 	power_on_lcd();
-	power_on_backlight();
+    printk("\n\nt13_power_on...\n\n");
       
 }
 static void t13_power_off(void)
 {
-	power_off_backlight();
     	power_off_lcd();
 }
 
@@ -260,7 +253,6 @@ static void t13_io_init(void)
     set_tcon_pinmux();
 
     power_on_lcd();
-    power_on_backlight();
 }
 
 static struct platform_device tcon_dev = {

@@ -23,7 +23,6 @@ EXTRA_CFLAGS += -DLINUX -DHOST_COMPILE -DFW_RUNNING_AS_STA -DSTATIC_LIB -DDEBUG 
 			-Idrivers/amlogic/wifi/ti_wgt7310/Txn/ \
 			-Idrivers/amlogic/wifi/ti_wgt7310/utils/
 
-#SRC = amlogic-wifi.c 
 SRC = SdioDrv.c WlanDrvIf.c osapi.c osmemapi.c osRgstry_parser.c ipc_k.c \
 	WlanDrvWext.c CmdInterpretWext.c RxBuf.c host_platform.c \
 	SdioAdapter.c osRgstry.c

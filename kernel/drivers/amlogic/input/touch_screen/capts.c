@@ -404,13 +404,13 @@ int capts_probe(struct device *dev, struct ts_chip *chip)
         HRTIMER_MODE_REL);
     }
     else {
+        ts->irq = pdata->irq;
         err = request_irq(pdata->irq, capts_interrupt,
         capts_irq_type[pdata->mode], dev->driver->name, ts);
         if (err) {
             printk("%s: request gpio irq failed, %d\n", ts->chip->name, err);
             goto fail;
         }
-        ts->irq = pdata->irq;
     }
     
     ts->input = capts_register_input(dev->driver->name, &ts->pdata->info);
@@ -486,14 +486,16 @@ int capts_suspend(struct device *dev, pm_message_t msg)
     }
 
     spin_unlock_irq(&ts->lock);
-   
+    if(ts->pdata->power_off)
+		ts->pdata->power_off();
     return 0;
 }
 
 int capts_resume(struct device *dev)
 {
     struct capts *ts = dev_get_drvdata(dev);
-
+    if(ts->pdata->power_on)
+		ts->pdata->power_on();
     spin_lock_irq(&ts->lock);
 
     ts->is_suspended = 0;

@@ -374,11 +374,11 @@ static inline void vdin_set_top(unsigned int offset, enum tvin_port_e port, unsi
 }
 
 #if defined(CONFIG_ARCH_MESON2)
-static unsigned int vdin_set_decimation(unsigned int offset, enum tvin_sig_fmt_e fmt)
+static unsigned int vdin_set_decimation(unsigned int offset, struct fmt_info_s fmt)
 {
 //    unsigned int offset = devp->addr_offset;
-    unsigned int h = tvin_fmt_tbl[fmt].h_active;
-    unsigned int v = tvin_fmt_tbl[fmt].v_active;
+    unsigned int h = fmt.h_active;
+    unsigned int v = fmt.v_active;
     unsigned int decimation_ratio = 0;
 
     while (h*v > TVIN_MAX_PIXS) // Decimation on formats bigger than 1080p (1920*1080(
@@ -408,10 +408,10 @@ static unsigned int vdin_set_decimation(unsigned int offset, enum tvin_sig_fmt_e
 }
 #endif
 
-static inline void vdin_set_color_matrix(unsigned int offset, enum tvin_sig_fmt_e fmt, enum vdin_format_convert_e format_convert)
+static inline void vdin_set_color_matrix(unsigned int offset, struct fmt_info_s fmt, enum vdin_format_convert_e format_convert)
 {
 //    unsigned int offset = devp->addr_offset;
-    unsigned int v = tvin_fmt_tbl[fmt].v_active;
+    unsigned int v = fmt.v_active;
     enum vdin_matrix_csc_e    matrix_csc = VDIN_MATRIX_NULL;
     struct vdin_matrix_lup_s *matrix_tbl;
 
@@ -419,22 +419,38 @@ static inline void vdin_set_color_matrix(unsigned int offset, enum tvin_sig_fmt_
     {
         case VDIN_FORMAT_CONVERT_RGB_YUV422:
         case VDIN_FORMAT_CONVERT_RGB_YUV444:
+			if(fmt.fmt==TVIN_SIG_FMT_MAX+1){
+				 if (v >= 720)
+				 	matrix_csc = VDIN_MATRIX_RGB_YUV709;
+				 else
+				 	matrix_csc = VDIN_MATRIX_RGB_YUV601;
+				}
+			else{
             if (
-                ((tvin_fmt_tbl[fmt].scan_mode == TVIN_SCAN_MODE_PROGRESSIVE) && (v >= 720)) || //  720p & above
-                ((tvin_fmt_tbl[fmt].scan_mode == TVIN_SCAN_MODE_INTERLACED)  && (v >= 540))    // 1080i & above
+                ((tvin_fmt_tbl[fmt.fmt].scan_mode == TVIN_SCAN_MODE_PROGRESSIVE) && (v >= 720)) || //  720p & above
+                ((tvin_fmt_tbl[fmt.fmt].scan_mode == TVIN_SCAN_MODE_INTERLACED)  && (v >= 540))    // 1080i & above
                )
                 matrix_csc = VDIN_MATRIX_RGB_YUV709;
             else
                 matrix_csc = VDIN_MATRIX_RGB_YUV601;
+				}
             break;
         case VDIN_FORMAT_CONVERT_YUV_RGB:
+			if(fmt.fmt==TVIN_SIG_FMT_MAX+1){
+				 if (v >= 720)
+				 	matrix_csc = VDIN_MATRIX_YUV709_RGB;
+            else
+                matrix_csc = VDIN_MATRIX_YUV601_RGB;
+				}
+			else{
             if (
-                ((tvin_fmt_tbl[fmt].scan_mode == TVIN_SCAN_MODE_PROGRESSIVE) && (v >= 720)) || //  720p & above
-                ((tvin_fmt_tbl[fmt].scan_mode == TVIN_SCAN_MODE_INTERLACED)  && (v >= 540))    // 1080i & above
+                ((tvin_fmt_tbl[fmt.fmt].scan_mode == TVIN_SCAN_MODE_PROGRESSIVE) && (v >= 720)) || //  720p & above
+                ((tvin_fmt_tbl[fmt.fmt].scan_mode == TVIN_SCAN_MODE_INTERLACED)  && (v >= 540))    // 1080i & above
                )
                 matrix_csc = VDIN_MATRIX_YUV709_RGB;
             else
                 matrix_csc = VDIN_MATRIX_YUV601_RGB;
+				}
             break;
         default:
             matrix_csc = VDIN_MATRIX_NULL;
@@ -463,10 +479,10 @@ static inline void vdin_set_color_matrix(unsigned int offset, enum tvin_sig_fmt_
     }
 }
 
-static inline void vdin_set_bbar(unsigned int offset, enum tvin_sig_fmt_e fmt, unsigned int h)
+static inline void vdin_set_bbar(unsigned int offset, struct fmt_info_s fmt, unsigned int h)
 {
 //    unsigned int offset = devp->addr_offset;
-    unsigned int v = tvin_fmt_tbl[fmt].v_active;
+    unsigned int v = fmt.v_active;
     unsigned int region_width = 1, block_thr = 0, line_thr = 0;
     while ((region_width<<1) < h)
     {
@@ -508,6 +524,7 @@ static inline void vdin_set_bbar(unsigned int offset, enum tvin_sig_fmt_e fmt, u
 static inline void vdin_set_histogram(unsigned int offset, unsigned int hs, unsigned int he, unsigned int vs, unsigned int ve)
 {
 //    unsigned int offset = devp->addr_offset;
+	//pr_info("--%s h_active is %d v_active is %d \n",__func__,he,ve);
     unsigned int pixel_sum = 0, record_len = 0, hist_pow = 0;
     pixel_sum = (he - hs + 1) * (ve - vs + 1);
     record_len = 0xffff<<3;
@@ -533,10 +550,10 @@ static inline void vdin_set_histogram(unsigned int offset, unsigned int hs, unsi
         ve, HIST_VEND_BIT, HIST_VEND_WID);
 }
 
-static inline void vdin_set_wr_ctrl(unsigned int offset, enum tvin_sig_fmt_e fmt, unsigned int h, enum vdin_format_convert_e format_convert)
+static inline void vdin_set_wr_ctrl(unsigned int offset, struct fmt_info_s fmt, unsigned int h, enum vdin_format_convert_e format_convert)
 {
 //    unsigned int offset = devp->addr_offset;
-    unsigned int v = tvin_fmt_tbl[fmt].v_active;
+    unsigned int v = fmt.v_active;
     unsigned int write_format444 = 0;
 
     switch (format_convert)
@@ -555,7 +572,8 @@ static inline void vdin_set_wr_ctrl(unsigned int offset, enum tvin_sig_fmt_e fmt
         (h -1), WR_HEND_BIT, WR_HEND_WID);
     // win_ve
     WRITE_CBUS_REG_BITS((VDIN_WR_V_START_END + offset),
-        (v -1), WR_VEND_BIT, WR_VEND_WID);
+    //    (v -1), WR_VEND_BIT, WR_VEND_WID);
+        (v), WR_VEND_BIT, WR_VEND_WID);
     // format444
     WRITE_CBUS_REG_BITS((VDIN_WR_CTRL + offset),
         write_format444, WR_FMT_BIT, WR_FMT_WID);
@@ -877,24 +895,25 @@ inline void vdin_set_regs(struct vdin_regs_s *p, int offset)
 
 void vdin_set_all_regs(struct vdin_dev_s *devp)
 {
-    unsigned int h = tvin_fmt_tbl[devp->para.fmt].h_active;
+    pr_info("--%s h_active is %d v_active is %d frame_rate is %d\n",__func__,devp->para.fmt_info.h_active,devp->para.fmt_info.v_active,devp->para.fmt_info.frame_rate);
+    unsigned int h = devp->para.fmt_info.h_active;//tvin_fmt_tbl[devp->para.fmt_info.fmt].h_active;
     enum vdin_format_convert_e format_convert = vdin_get_format_convert(devp->para.port);
 
 #if defined(CONFIG_ARCH_MESON2)
 //  ** Decimation sub-module **
-    h = vdin_set_decimation(devp->addr_offset, devp->para.fmt);
+    h = vdin_set_decimation(devp->addr_offset, devp->para.fmt_info);
 #endif
 //  ** matrix sub-module **
-    vdin_set_color_matrix(devp->addr_offset, devp->para.fmt, format_convert);
+    vdin_set_color_matrix(devp->addr_offset, devp->para.fmt_info, format_convert);
 
 //  ** bbar sub-module **
-    vdin_set_bbar(devp->addr_offset, devp->para.fmt, h);
+    vdin_set_bbar(devp->addr_offset, devp->para.fmt_info, h);
 
 //  ** hist sub-module **
-    vdin_set_histogram(devp->addr_offset, 0, h - 1, 0, tvin_fmt_tbl[devp->para.fmt].v_active - 1);
+    vdin_set_histogram(devp->addr_offset, 0, h - 1, 0, devp->para.fmt_info.v_active-1);//;//tvin_fmt_tbl[devp->para.fmt_info.fmt].v_active - 1);
 
 //  ** write sub-module **
-    vdin_set_wr_ctrl(devp->addr_offset, devp->para.fmt, h, format_convert);
+    vdin_set_wr_ctrl(devp->addr_offset, devp->para.fmt_info, h, format_convert);
 
 //  ** top sub-module **
     vdin_set_top(devp->addr_offset, devp->para.port,h);
@@ -943,10 +962,10 @@ inline void vdin_set_default_regmap(unsigned int offset)
     // [    5]  asfifo_656.hs_en            = 1
     // [    4]  asfifo_656.vs_inv           = 0/(positive-active, negative-active)
     // [    3]  asfifo_656.hs_inv           = 0/(positive-active, negative-active)
-    // [    2]  asfifo_656.rst_on_vs        = 1
+    // [    2]  asfifo_656.rst_on_vs        = 0
     // [    1]  asfifo_656.clr_ov_flag      = 0
     // [    0]  asfifo_656.rst              = 0
-    WRITE_CBUS_REG((VDIN_ASFIFO_CTRL0         + offset), 0x00e400e4);
+    WRITE_CBUS_REG((VDIN_ASFIFO_CTRL0         + offset), 0x00e400e0);
     // [   23] asfifo_hdmi.de_en            = 1
     // [   22] asfifo_hdmi.vs_en            = 1
     // [   21] asfifo_hdmi.hs_en            = 1

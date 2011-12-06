@@ -1580,7 +1580,10 @@ static int nand_do_read_oob(struct mtd_info *mtd, loff_t from,
 	page = realpage & chip->pagemask;
 
 	while(1) {
-		sndcmd = chip->ecc.read_oob(mtd, chip, page, sndcmd);
+		if (!sndcmd)
+			sndcmd = chip->ecc.read_oob(mtd, chip, page, sndcmd);
+		else
+			sndcmd = chip->ecc.read_oob(mtd, chip, page, readlen);
 
 		len = min(len, readlen);
 		buf = nand_transfer_oob(chip, buf, ops, len);
@@ -1984,8 +1987,10 @@ static int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
 		chip->pagebuf = -1;
 
 	/* If we're not given explicit OOB data, let it be 0xFF */
-	if (likely(!oob))
-		memset(chip->oob_poi, 0xff, mtd->oobsize);
+	if (likely(!oob)) {
+		memset(chip->oob_poi, 0xa5, mtd->oobsize);			//a5 not ff for all ff data very dangerous
+		chip->oob_poi[chip->badblockpos] = 0xFF;
+	}
 
 	while(1) {
 		int bytes = mtd->writesize;
@@ -2713,7 +2718,7 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
 		NAND_LARGE_BADBLOCK_POS : NAND_SMALL_BADBLOCK_POS;
 
 	/* Get chip options, preserve non chip based options */
-	chip->options &= ~NAND_CHIPOPTIONS_MSK;
+	//chip->options &= ~NAND_CHIPOPTIONS_MSK;
 	chip->options |= type->options & NAND_CHIPOPTIONS_MSK;
 
 	/*

@@ -134,7 +134,8 @@ static int sdio_irq_thread(void *_host)
 			schedule();
 		}
 		else if (!kthread_should_stop())
-			schedule_timeout(period);
+		    msleep(10);
+			//schedule_timeout(period);
                 set_current_state(TASK_INTERRUPTIBLE);
 		if(host->sdio_task_state)
 		{

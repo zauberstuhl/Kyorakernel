@@ -60,8 +60,11 @@ dsp_register.h
 #define DSP_DECODE_OPTION       DSP_REG(21)
 #define DSP_AUDIO_FORMAT_INFO  DSP_REG(22)
 
+#define DSP_GET_EXTRA_INFO_FINISH    DSP_REG(23)
+
 #define MAILBOX1_REG(n)	DSP_REG(40+n)
 #define MAILBOX2_REG(n)	DSP_REG(40+32+n)
+#define DSP_WORK_INFO (AUDIO_DSP_END_ADDR - 128)
 
 
 #ifndef __ASSEMBLY__
@@ -82,6 +85,8 @@ int len;
 #define M1B_IRQ5_STREAM_FMT_CHANGED 			(5+16)
 #define M1B_IRQ5_STREAM_RD_WD_TEST 			(6+16)
 #define M1B_IRQ7_DECODE_FATAL_ERR			(7+16)
+#define M1B_IRQ8_IEC958_INFO                (8+16)
+
 
 #define M2B_IRQ0_DSP_HALT							(0)
 #define M2B_IRQ1_DSP_RESET						(1)
@@ -90,7 +95,7 @@ int len;
 #define M2B_IRQ4_AUDIO_INFO					(4)
 #define M2B_IRQ0_DSP_SLEEP					(5)
 #define M2B_IRQ0_DSP_WAKEUP					(6)
-#define M2B_IRQ0_DSP_SR_CHANGED			(7) //reserved for hdmi audio input sample rate notify
+#define M2B_IRQ0_DSP_AUDIO_EFFECT			(7) //audio post process cmd 
 
 #define CMD_PRINT_LOG					(1234<<8 |1)
 

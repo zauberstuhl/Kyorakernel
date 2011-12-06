@@ -37,7 +37,7 @@
 #include <mach/am_regs.h>
 #include <mach/pinmux.h>
 #include <mach/power_gate.h>
-
+//HSD 100PXN1
 #define LCD_WIDTH       1024
 #define LCD_HEIGHT      768
 #define MAX_WIDTH       1337

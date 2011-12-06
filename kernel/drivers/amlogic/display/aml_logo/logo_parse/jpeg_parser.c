@@ -23,6 +23,8 @@
 #include <linux/syscalls.h>
 
 
+#define PROVIDER_NAME   "decoder.jpeg_parser"
+
 static  logo_parser_t    logo_jpeg_parser={
  	.name="jpg",
 	.op={
@@ -34,12 +36,12 @@ static  logo_parser_t    logo_jpeg_parser={
 jpeg_private_t *g_jpeg_parser;
 
 
-static vframe_t *jpeglogo_vf_peek(void)
+static vframe_t *jpeglogo_vf_peek(void* op_arg)
 {
 	return (g_jpeg_parser->state== PIC_DECODED) ? &g_jpeg_parser->vf : NULL;
 }
 
-static vframe_t *jpeglogo_vf_get(void)
+static vframe_t *jpeglogo_vf_get(void* op_arg)
 {
 	if (g_jpeg_parser->state == PIC_DECODED) {
 		g_jpeg_parser->state = PIC_FETCHED;
@@ -48,12 +50,14 @@ static vframe_t *jpeglogo_vf_get(void)
 	
 	return NULL;
 }
-static const struct vframe_provider_s jpeglogo_vf_provider =
+static const struct vframe_operations_s jpeglogo_vf_provider =
 {
     .peek = jpeglogo_vf_peek,
     .get  = jpeglogo_vf_get,
     .put  = NULL,
 };
+
+static struct vframe_provider_s jpeglogo_vf_prov;
 
 static inline u32 index2canvas(u32 index)
 {
@@ -351,10 +355,12 @@ static int hardware_init(logo_object_t *plogo,int logo_size)
 		return -EINVAL;
 	}
 	WRITE_MPEG_REG(RESET0_REGISTER, RESET_VCPU | RESET_CCPU);
+#ifdef CONFIG_AM_STREAMING	
 	if (amvdec_loadmc(mc_addr_aligned) < 0) {
 		amlog_mask_level(LOG_MASK_PARSER,LOG_LEVEL_LOW,"[jpeglogo]: Can not loading HW decoding ucode.\n");
         	return -EBUSY;
     	}
+#endif	
 	amlog_mask_level(LOG_MASK_PARSER,LOG_LEVEL_LOW,"load micro code completed\n");
 	jpeglogo_prot_init(plogo);
 	
@@ -424,7 +430,9 @@ static  int  thread_progress(void *para)
     	while (time_before(jiffies, timeout)) {
 		if (priv->state== PIC_FETCHED)
 		{
-			vf_unreg_provider();
+#ifdef CONFIG_AM_VIDEO 	
+			vf_unreg_provider(&jpeglogo_vf_prov);
+#endif
 			kfree(priv);
 			amlog_mask_level(LOG_MASK_PARSER,LOG_LEVEL_LOW,"logo fetched\n");
 			return SUCCESS;
@@ -437,8 +445,9 @@ static  int  jpeg_decode(logo_object_t *plogo)
 {
 	ulong timeout;
 	jpeg_private_t *priv=(jpeg_private_t*)plogo->parser->priv;
-	
+#ifdef CONFIG_AM_STREAMING	
 	amvdec_start();
+#endif
        	feed_vb(plogo->parser->logo_pic_info.size);
 	timeout = jiffies + HZ * 2;//wait 2s
     
@@ -449,13 +458,18 @@ static  int  jpeg_decode(logo_object_t *plogo)
 			break;
 		}
     	}
+#ifdef CONFIG_AM_STREAMING		
     	amvdec_stop();
+#endif
 	free_irq(INT_MAILBOX_1A, (void *)hardware_init);
 	if (priv->state > PIC_NA) 
 	{
 		if(plogo->para.output_dev_type == LOGO_DEV_VID)
 		{
-			vf_reg_provider(&jpeglogo_vf_provider);
+#ifdef CONFIG_AM_VIDEO 		
+            vf_provider_init(&jpeglogo_vf_prov, PROVIDER_NAME, &jpeglogo_vf_provider, NULL);
+			vf_reg_provider(&jpeglogo_vf_prov);
+#endif
 			kernel_thread(thread_progress, plogo, 0);
 		}else
 		{

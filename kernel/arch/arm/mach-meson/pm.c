@@ -15,9 +15,11 @@
 #include <linux/clk.h>
 #include <linux/spinlock.h>
 #include <linux/clk.h>
+#include <linux/fs.h>
 
 #include <asm/cacheflush.h>
 #include <asm/delay.h>
+#include <asm/uaccess.h>
 
 #include <mach/pm.h>
 #include <mach/am_regs.h>
@@ -25,6 +27,7 @@
 #include <mach/power_gate.h>
 #include <mach/gpio.h>
 #include <mach/pctl.h>
+#include <mach/clock.h>
 
 #ifdef CONFIG_WAKELOCK
 #include <linux/wakelock.h>
@@ -40,6 +43,14 @@ static int early_suspend_flag = 0;
 #define OFF 0
 
 #include "sleep.h"
+
+#ifndef CONFIG_BT
+#define EARLY_SUSPEND_USE_XTAL
+#endif
+
+#if (defined CONFIG_MACH_MESON_8726M_REFC03)||(defined CONFIG_MACH_MESON_8726M_REFC06)
+#define ETHERNET_ALWAYS
+#endif
 
 static void (*meson_sram_suspend) (struct meson_pm_config *);
 static struct meson_pm_config *pdata;
@@ -203,7 +214,9 @@ void power_gate_switch(int flag)
     GATE_SWITCH(flag, DEMUX);
     //GATE_SWITCH(flag, MMC_DDR);
     //GATE_SWITCH(flag, DDR);
+#ifndef ETHERNET_ALWAYS
     GATE_SWITCH(flag, ETHERNET);
+#endif
     GATE_SWITCH(flag, HDMI_MPEG_DOMAIN);
     //GATE_SWITCH(flag, HIU_PARSER);
     GATE_SWITCH(flag, HIU_PARSER_TOP);
@@ -223,14 +236,18 @@ void power_gate_switch(int flag)
     GATE_SWITCH(flag, SDIO);
     GATE_SWITCH(flag, ASYNC_FIFO);
     GATE_SWITCH(flag, STREAM);
-    //GATE_SWITCH(flag, RTC);
+#if (defined CONFIG_MACH_MESON_8726M_REFC03)
+    GATE_SWITCH(flag, RTC);
+#endif
     //GATE_SWITCH(flag, UART0);
     GATE_SWITCH(flag, RANDOM_NUM_GEN);
     GATE_SWITCH(flag, SMART_CARD_MPEG_DOMAIN);
     GATE_SWITCH(flag, SMART_CARD);
     GATE_SWITCH(flag, SAR_ADC);
     GATE_SWITCH(flag, I2C);
+#if (!defined CONFIG_MACH_MESON_8726M_REFC03)&&(!defined CONFIG_MACH_MESON_8726M_REFC06)
     GATE_SWITCH(flag, IR_REMOTE);
+#endif
     //GATE_SWITCH(flag, _1200XXX);
     GATE_SWITCH(flag, SATA);
     GATE_SWITCH(flag, SPI1);
@@ -272,12 +289,18 @@ void early_power_gate_switch(int flag)
 }
 EXPORT_SYMBOL(early_power_gate_switch);
 
+#ifndef ETHERNET_ALWAYS
 #define CLK_COUNT 9
+#else
+#define CLK_COUNT 8
+#endif
 static char clk_flag[CLK_COUNT];
 static unsigned clks[CLK_COUNT]={
     HHI_DEMOD_CLK_CNTL,
     HHI_SATA_CLK_CNTL,
+#ifndef ETHERNET_ALWAYS
     HHI_ETH_CLK_CNTL,
+#endif
     HHI_WIFI_CLK_CNTL,
     HHI_VID_CLK_CNTL,
     HHI_AUD_CLK_CNTL,
@@ -289,7 +312,9 @@ static unsigned clks[CLK_COUNT]={
 static char clks_name[CLK_COUNT][32]={
     "HHI_DEMOD_CLK_CNTL",
     "HHI_SATA_CLK_CNTL",
+#ifndef ETHERNET_ALWAYS
     "HHI_ETH_CLK_CNTL",
+#endif
     "HHI_WIFI_CLK_CNTL",
     "HHI_VID_CLK_CNTL",
     "HHI_AUD_CLK_CNTL",
@@ -298,24 +323,44 @@ static char clks_name[CLK_COUNT][32]={
     "HHI_MPEG_CLK_CNTL",
 };
 
-#define EARLY_CLK_COUNT 6
+#ifdef EARLY_SUSPEND_USE_XTAL
+    #ifndef ETHERNET_ALWAYS
+        #define EARLY_CLK_COUNT 6
+    #else
+        #define EARLY_CLK_COUNT 5
+    #endif
+#else
+    #ifndef ETHERNET_ALWAYS
+        #define EARLY_CLK_COUNT 5
+    #else
+        #define EARLY_CLK_COUNT 4
+    #endif
+#endif
 static char early_clk_flag[EARLY_CLK_COUNT];
 static unsigned early_clks[EARLY_CLK_COUNT]={
     HHI_DEMOD_CLK_CNTL,
     HHI_SATA_CLK_CNTL,
+#ifndef ETHERNET_ALWAYS
     HHI_ETH_CLK_CNTL,
+#endif
     HHI_WIFI_CLK_CNTL,
     HHI_VID_CLK_CNTL,
+#ifdef EARLY_SUSPEND_USE_XTAL
     HHI_MPEG_CLK_CNTL,
+#endif
 };
 
 static char early_clks_name[EARLY_CLK_COUNT][32]={
     "HHI_DEMOD_CLK_CNTL",
     "HHI_SATA_CLK_CNTL",
+#ifndef ETHERNET_ALWAYS
     "HHI_ETH_CLK_CNTL",
+#endif
     "HHI_WIFI_CLK_CNTL",
     "HHI_VID_CLK_CNTL",
+#ifdef EARLY_SUSPEND_USE_XTAL
     "HHI_MPEG_CLK_CNTL",
+#endif
 };
 
 static unsigned uart_rate_backup;
@@ -356,7 +401,7 @@ void clk_switch(int flag)
                 }
             }
             else if (clks[i] == HHI_MPEG_CLK_CNTL){
-                if (READ_CBUS_REG(clks[i]&(1<<8))){
+                if (READ_CBUS_REG(clks[i])&(1<<8)){
                     clk_flag[i] = 1;
                     
                     udelay(1000);
@@ -532,16 +577,22 @@ typedef struct {
 	unsigned enable; // 1:cbus 2:apb 3:ahb 0:disable
 } analog_t;
 
+#if (!defined CONFIG_MACH_MESON_8726M_REFC03)&&(!defined CONFIG_MACH_MESON_8726M_REFC06)
 #define ANALOG_COUNT	8
+#else
+#define ANALOG_COUNT	5
+#endif
 static analog_t analog_regs[ANALOG_COUNT] = {
 	{"SAR_ADC",				SAR_ADC_REG3, 		1<<28,			(1<<30)|(1<<21), 	0,	1},
 	{"LED_PWM_REG0",		LED_PWM_REG0, 		1<<13,			1<<12,				0,	0}, // needed for core voltage adjustment, so not off
 	{"VGHL_PWM_REG0",		VGHL_PWM_REG0, 		1<<13,			1<<12,				0,	1},
 	{"WIFI_ADC_SAMPLING",	WIFI_ADC_SAMPLING, 	0,				1<<18,				0,	1},
 	{"ADC_EN_ADC",			ADC_EN_ADC,			0,				1<<31,				0,	2},
+#if (!defined CONFIG_MACH_MESON_8726M_REFC03)&&(!defined CONFIG_MACH_MESON_8726M_REFC06)
 	{"WIFI_ADC_DAC",		WIFI_ADC_DAC,		(3<<10)|0xff,	0,					0,	3},
 	{"ADC_EN_CMLGEN_RES",	ADC_EN_CMLGEN_RES,	0,				(1<<26)|(1<<25),	0, 	3},
 	{"WIFI_SARADC",			WIFI_SARADC,		0,				1<<2,				0, 	3},
+#endif
 };
 
 
@@ -616,23 +667,26 @@ void analog_switch(int flag)
     }
 }
 
-void usb_switch(int flag,int ctrl)
+void usb_switch(int is_on,int ctrl)
 {
-    int msk = PREI_USB_PHY_A_POR;
-	
-    if(ctrl == 1)
-        msk = PREI_USB_PHY_B_POR;
+	int index,por;
 
-    if (flag){
-        printk(KERN_INFO "usb %d on\n",ctrl);
-        CLEAR_CBUS_REG_MASK(PREI_USB_PHY_REG, msk);
-    }
-    else{
-        printk(KERN_INFO "usb %d off\n",ctrl);
-        SET_CBUS_REG_MASK(PREI_USB_PHY_REG, msk);
-    }
+	if(ctrl == 0)
+		index = USB_CTL_INDEX_A;
+	else
+		index = USB_CTL_INDEX_B;
+
+	if(is_on)
+		por = USB_CTL_POR_ON;
+	else 
+		por = USB_CTL_POR_OFF;
+
+	set_usb_ctl_por(index,por);
 }
 
+#if defined(CONFIG_SUSPEND)
+extern void set_standby_led(char is_standby);
+#endif
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void meson_system_early_suspend(struct early_suspend *h)
 {
@@ -645,6 +699,9 @@ static void meson_system_early_suspend(struct early_suspend *h)
         early_clk_switch(OFF);
         early_pll_switch(OFF);
         early_suspend_flag=1;
+    #if (defined(CONFIG_SUSPEND))&&(defined(CONFIG_MACH_MESON_8726M_REFC06))
+        set_standby_led(1);
+    #endif
     }
 }
 
@@ -659,6 +716,9 @@ static void meson_system_late_resume(struct early_suspend *h)
 			pdata->set_exgpio_early_suspend(ON);
 		}
         printk(KERN_INFO "sys_resume\n");
+    #if (defined(CONFIG_SUSPEND))&&(defined(CONFIG_MACH_MESON_8726M_REFC06))
+        set_standby_led(0);
+    #endif
     }
 }
 #endif
@@ -772,7 +832,11 @@ static void meson_pm_suspend(void)
 #else
     if (READ_CBUS_REG(HHI_MPEG_CLK_CNTL)&(1<<8))
         CLEAR_CBUS_REG_MASK(HHI_MPEG_CLK_CNTL, (1<<8)); // clk81 = xtal
+#if (!defined CONFIG_MACH_MESON_8726M_REFC03)&&(!defined CONFIG_MACH_MESON_8726M_REFC06)
     WRITE_CBUS_REG_BITS(HHI_MPEG_CLK_CNTL, 0x7f, 0, 6);	// devider = 128
+#else
+    WRITE_CBUS_REG_BITS(HHI_MPEG_CLK_CNTL, 0x1e, 0, 6); // devider = 30
+#endif
     WRITE_CBUS_REG_BITS(HHI_MPEG_CLK_CNTL, 0, 12, 2);	// clk81 src -> xtal_rtc
     SET_CBUS_REG_MASK(HHI_MPEG_CLK_CNTL, (1<<8));		// clk81 = xtal_rtc / devider
 #endif
@@ -790,7 +854,24 @@ static void meson_pm_suspend(void)
 							1); 					    // 1uS enable delay 
     SET_CBUS_REG_MASK(HHI_SYS_PLL_CNTL, (1<<15));		// turn off sys pll
      
+#if (defined CONFIG_MACH_MESON_8726M_REFC01) || (defined CONFIG_MACH_MESON_8726M_REFC03) 
+    WRITE_CBUS_REG(A9_0_IRQ_IN0_INTR_MASK, pdata->power_key);     // enable remote interrupt only
+#elif  (defined CONFIG_MACH_MESON_8726M_REFC06) 
+    WRITE_CBUS_REG(A9_0_IRQ_IN0_INTR_MASK, pdata->power_key);     // enable remote interrupt only
+    WRITE_CBUS_REG(A9_0_IRQ_IN2_INTR_MASK, 1); 
+#else
     WRITE_CBUS_REG(A9_0_IRQ_IN2_INTR_MASK, pdata->power_key);     // enable rtc interrupt only
+#endif
+#if (defined CONFIG_MACH_MESON_8726M_REFC03)||(defined CONFIG_MACH_MESON_8726M_REFC06)
+    int tmp_data = 0;
+    tmp_data = READ_CBUS_REG(PREG_CTLREG0_ADDR);
+    WRITE_CBUS_REG(PREG_CTLREG0_ADDR, tmp_data | 0x1);
+    tmp_data = READ_CBUS_REG(IR_DEC_REG0);
+    WRITE_CBUS_REG(IR_DEC_REG0, tmp_data & 0xFFFFFF00);
+    tmp_data = READ_CBUS_REG(IR_DEC_REG1);
+    WRITE_CBUS_REG(IR_DEC_REG1, tmp_data | 0x00000001);
+    WRITE_CBUS_REG(IR_DEC_REG1, tmp_data & 0xFFFFFFFE);
+#endif
     meson_sram_suspend(pdata);
 
     CLEAR_CBUS_REG_MASK(HHI_SYS_PLL_CNTL, (1<<15));		// turn on sys pll
@@ -804,7 +885,15 @@ static void meson_pm_suspend(void)
 	CLEAR_CBUS_REG_MASK(HHI_MPEG_CLK_CNTL, (1<<9));     // xtal_rtc = xtal
 #endif
     WRITE_CBUS_REG(HHI_MPEG_CLK_CNTL, mpeg_clk_backup);	// restore clk81 ctrl
-
+#if (defined CONFIG_MACH_MESON_8726M_REFC03)||(defined CONFIG_MACH_MESON_8726M_REFC06)
+    tmp_data = READ_CBUS_REG(PREG_CTLREG0_ADDR);
+    WRITE_CBUS_REG(PREG_CTLREG0_ADDR, tmp_data & 0xFFFFFFFE);
+    tmp_data = READ_CBUS_REG(IR_DEC_REG0);
+    WRITE_CBUS_REG(IR_DEC_REG0, tmp_data | 0x00000013);
+    tmp_data = READ_CBUS_REG(IR_DEC_REG1);
+    WRITE_CBUS_REG(IR_DEC_REG1, tmp_data | 0x00000001);
+    WRITE_CBUS_REG(IR_DEC_REG1, tmp_data & 0xFFFFFFFE);
+#endif
     printk(KERN_INFO "... wake up\n");
 
     if(pdata->set_vccx2){
@@ -880,7 +969,9 @@ static int __init meson_pm_probe(struct platform_device *pdev)
 {
     printk(KERN_INFO "enter meson_pm_probe!\n");
 
+#if (!defined CONFIG_MACH_MESON_8726M_REFC03)&&(!defined CONFIG_MACH_MESON_8726M_REFC06)&&(!defined CONFIG_MACH_MESON_8726M_REFC08)
     power_init_off();
+#endif
     power_gate_init();
 
 #ifdef CONFIG_HAS_EARLYSUSPEND

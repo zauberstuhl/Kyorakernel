@@ -72,7 +72,11 @@
 #endif
 
 #ifdef CONFIG_SIX_AXIS_SENSOR_MPU3050
+#ifdef CONFIG_MPU_PRE_V340
 #include <linux/mpu.h>
+#else
+#include <linux/mpu_new/mpu.h>
+#endif
 #endif
 
 #ifdef CONFIG_SN7325
@@ -108,6 +112,9 @@
 #include <linux/bq27x00_battery.h>
 #endif
 
+#ifdef CONFIG_AR1520_GPS
+#include <linux/ar1520.h>
+#endif
 
 #if defined(CONFIG_JPEGLOGO)
 static struct resource jpeglogo_resources[] = {
@@ -183,10 +190,10 @@ static struct platform_device adc_ts_device = {
 #include <linux/adc_keypad.h>
 
 static struct adc_key adc_kp_key[] = {
-    {KEY_PAGEDOWN,          "vol-", CHAN_4, 0, 60},
-    {KEY_PAGEUP,            "vol+", CHAN_4, 306, 60},
-    {KEY_TAB,               "exit", CHAN_4, 602, 60},
-    {KEY_LEFTMETA,          "menu", CHAN_4, 760, 60},
+    {KEY_VOLUMEDOWN,          "vol-", CHAN_4, 0, 60},
+    {KEY_VOLUMEUP,            "vol+", CHAN_4, 306, 60},
+    {KEY_BACK,                "exit", CHAN_4, 602, 60},
+    {KEY_MENU,                "menu", CHAN_4, 760, 60},
 };
 
 static struct adc_kp_platform_data adc_kp_pdata = {
@@ -995,17 +1002,127 @@ aml_plat_cam_data_t video_gc0308_data = {
 
 #endif
 #if defined(CONFIG_SUSPEND)
+
+typedef struct {
+	char name[32];
+	unsigned bank;
+	unsigned bit;
+	gpio_mode_t mode;
+	unsigned value;
+	unsigned enable;
+} gpio_data_t;
+
+#define MAX_GPIO 0
+static gpio_data_t gpio_data[MAX_GPIO] = {
+	// ----------------------------------- power ctrl ---------------------------------
+	{"GPIOC_3 -- AVDD_EN",		GPIOC_bank_bit0_26(3),		GPIOC_bit_bit0_26(3),	GPIO_OUTPUT_MODE, 1, 1},
+	{"GPIOA_7 -- BL_PWM",		GPIOA_bank_bit0_14(7),		GPIOA_bit_bit0_14(7),	GPIO_OUTPUT_MODE, 1, 1},
+	{"GPIOA_6 -- VCCx2_EN",		GPIOA_bank_bit0_14(6),		GPIOA_bit_bit0_14(6),	GPIO_OUTPUT_MODE, 1, 1},
+	// ----------------------------------- i2s ---------------------------------
+	{"TEST_N -- I2S_DOUT",		GPIOJTAG_bank_bit(16),		GPIOJTAG_bit_bit16(16),	GPIO_OUTPUT_MODE, 1, 1},
+	// ----------------------------------- wifi&bt ---------------------------------
+	{"GPIOD_12 -- WL_RST_N",	GPIOD_bank_bit2_24(12), 	GPIOD_bit_bit2_24(12), 	GPIO_OUTPUT_MODE, 1, 1},
+	{"GPIOD_14 -- BT/GPS_RST_N",GPIOD_bank_bit2_24(14),		GPIOD_bit_bit2_24(14), 	GPIO_OUTPUT_MODE, 1, 1},
+	{"GPIOD_18 -- UART_CTS_N",	GPIOD_bank_bit2_24(18), 	GPIOD_bit_bit2_24(18), 	GPIO_OUTPUT_MODE, 1, 1},
+	{"GPIOD_21 -- BT/GPS",		GPIOD_bank_bit2_24(21), 	GPIOD_bit_bit2_24(21), 	GPIO_OUTPUT_MODE, 1, 1},
+	// ----------------------------------- lcd ---------------------------------
+	{"GPIOC_12 -- LCD_U/D",		GPIOC_bank_bit0_26(12), 	GPIOC_bit_bit0_26(12), 	GPIO_OUTPUT_MODE, 1, 1},
+	{"GPIOA_3 -- LCD_PWR_EN",	GPIOA_bank_bit0_14(3),		GPIOA_bit_bit0_14(3),	GPIO_OUTPUT_MODE, 1, 1},
+};	
+
+static void save_gpio(int port) 
+{
+	gpio_data[port].mode = get_gpio_mode(gpio_data[port].bank, gpio_data[port].bit);
+	if (gpio_data[port].mode==GPIO_OUTPUT_MODE)
+	{
+		if (gpio_data[port].enable){
+			printk("change %s output %d to input\n", gpio_data[port].name, gpio_data[port].value); 
+			gpio_data[port].value = get_gpio_val(gpio_data[port].bank, gpio_data[port].bit);
+			set_gpio_mode(gpio_data[port].bank, gpio_data[port].bit, GPIO_INPUT_MODE);
+		}
+		else{
+			printk("no change %s output %d\n", gpio_data[port].name, gpio_data[port].value); 
+		}
+	}
+}
+
+static void restore_gpio(int port)
+{
+	if ((gpio_data[port].mode==GPIO_OUTPUT_MODE)&&(gpio_data[port].enable))
+	{
+		set_gpio_val(gpio_data[port].bank, gpio_data[port].bit, gpio_data[port].value);
+		set_gpio_mode(gpio_data[port].bank, gpio_data[port].bit, GPIO_OUTPUT_MODE);
+		// printk("%s output %d\n", gpio_data[port].name, gpio_data[port].value); 
+	}
+}
+
+typedef struct {
+	char name[32];
+	unsigned reg;
+	unsigned bits;
+	unsigned enable;
+} pinmux_data_t;
+
+
+#define MAX_PINMUX	12
+
+pinmux_data_t pinmux_data[MAX_PINMUX] = {
+	{"HDMI", 	0, (1<<2)|(1<<1)|(1<<0), 						1},
+	{"TCON", 	0, (1<<14)|(1<<11), 							1},
+	{"I2S_OUT",	0, (1<<18),						 				1},
+	{"I2S_CLK",	1, (1<<19)|(1<<15)|(1<<11),		 				1},
+	{"SPI",		1, (1<<29)|(1<<27)|(1<<25)|(1<<23),				1},
+	{"I2C",		2, (1<<5)|(1<<2),								1},
+	{"SD",		2, (1<<15)|(1<<14)|(1<<13)|(1<<12)|(1<<8),		1},
+	{"PWM",		2, (1<<31),										1},
+	{"UART_A",	3, (1<<24)|(1<23),								0},
+	{"RGB",		4, (1<<5)|(1<<4)|(1<<3)|(1<<2)|(1<<1)|(1<<0),	1},
+	{"UART_B",	5, (1<<24)|(1<23),								0},
+	{"REMOTE",	5, (1<<31),										1},
+};
+
+static unsigned pinmux_backup[6];
+
+static void save_pinmux(void)
+{
+	int i;
+	for (i=0;i<6;i++)
+		pinmux_backup[i] = READ_CBUS_REG(PERIPHS_PIN_MUX_0+i);
+	for (i=0;i<MAX_PINMUX;i++){
+		if (pinmux_data[i].enable){
+			printk("%s %x\n", pinmux_data[i].name, pinmux_data[i].bits);
+			clear_mio_mux(pinmux_data[i].reg, pinmux_data[i].bits);
+		}
+	}
+}
+
+static void restore_pinmux(void)
+{
+	int i;
+	for (i=0;i<6;i++)
+		 WRITE_CBUS_REG(PERIPHS_PIN_MUX_0+i, pinmux_backup[i]);
+}
+	
 static void set_vccx2(int power_on)
 {
-    if(power_on)
-    {
+	int i;
+    if (power_on){
+		restore_pinmux();
+		for (i=0;i<MAX_GPIO;i++)
+			restore_gpio(i);
+		
+        printk(KERN_INFO "set_vccx2 power up\n");
         set_gpio_val(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), 1);
         set_gpio_mode(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), GPIO_OUTPUT_MODE);
     }
-    else
-    {
+    else{
+        printk(KERN_INFO "set_vccx2 power down\n");        
         set_gpio_val(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), 0);
         set_gpio_mode(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), GPIO_OUTPUT_MODE);
+
+		save_pinmux();
+		for (i=0;i<MAX_GPIO;i++)
+			save_gpio(i);
     }
 }
 static struct meson_pm_config aml_pm_pdata = {
@@ -1016,7 +1133,7 @@ static struct meson_pm_config aml_pm_pdata = {
     .ddr_clk = 0x00110820,
     .sleepcount = 128,
     .set_vccx2 = set_vccx2,
-    .core_voltage_adjust = 5,
+    .core_voltage_adjust = 8,
 };
 
 static struct platform_device aml_pm_device = {
@@ -1290,7 +1407,7 @@ static struct aml_power_pdata power_pdata = {
 	.bat_charge_value_table = bat_charge_value_table,
 	.bat_level_table = bat_level_table,
 	.bat_table_len = 37,		
-	.is_support_usb_charging = 0;
+	.is_support_usb_charging = 0,
 	//.supplied_to = supplicants,
 	//.num_supplicants = ARRAY_SIZE(supplicants),
 };
@@ -1307,6 +1424,11 @@ static struct platform_device power_dev = {
 static int is_ac_connected(void)
 {
 	return (READ_CBUS_REG(ASSIST_HW_REV)&(1<<9))? 1:0;//GP_INPUT1
+}
+
+static int get_charge_status()
+{
+    return (READ_CBUS_REG(ASSIST_HW_REV)&(1<<8))? 1:0;//GP_INPUT0
 }
 
 static void set_charge(int flags)
@@ -1332,9 +1454,10 @@ static void set_bat_off(void)
 
 static struct bq27x00_battery_pdata bq27x00_pdata = {
 	.is_ac_online	= is_ac_connected,
+	.get_charge_status = get_charge_status,	
 	.set_charge = set_charge,
 	.set_bat_off = set_bat_off,
-    .chip = 0,
+    .chip = 1,
 };
 #endif
 
@@ -1363,6 +1486,59 @@ static struct platform_device aml_uart_device = {
     .resource     = NULL,   
     .dev = {        
                 .platform_data = &aml_uart_plat,
+           },
+};
+#endif
+
+#ifdef CONFIG_AR1520_GPS
+static void ar1520_power_on(void)
+{
+#ifdef CONFIG_SN7325
+	printk("power on gps\n");
+	configIO(0, 0);
+	setIO_level(0, 1, 7);//OD7
+#endif	
+}
+
+static void ar1520_power_off(void)
+{
+#ifdef CONFIG_SN7325
+	printk("power off gps\n");
+	configIO(0, 0);
+	setIO_level(0, 0, 7);//OD7
+#endif	
+}
+
+static void ar1520_reset(void)
+{
+#ifdef CONFIG_SN7325
+	printk("reset gps\n");
+	msleep(200);
+	configIO(0, 0);
+	setIO_level(0, 0, 4);//OD4
+	msleep(200);
+	configIO(0, 0);
+	setIO_level(0, 1, 4);//OD4
+	msleep(200);
+	configIO(0, 0);
+	setIO_level(0, 0, 4);//OD4
+	msleep(200);
+	configIO(0, 0);
+	setIO_level(0, 1, 4);//OD4
+#endif	
+}
+
+static struct ar1520_platform_data aml_ar1520_plat = {
+	.power_on = ar1520_power_on,
+	.power_off = ar1520_power_off,
+	.reset = ar1520_reset,
+};
+
+static struct platform_device aml_ar1520_device = {	
+    .name         = "ar1520_gps",  
+    .id       = -1, 
+    .dev = {        
+                .platform_data = &aml_ar1520_plat,  
            },
 };
 #endif
@@ -1604,13 +1780,9 @@ static void aml_8726m_set_bl_level(unsigned level)
 
     if (level < 30)
     {
-        cs_level = 0;
+        cs_level = 1750;
     }
-    else if (level == 30)
-    {
-        cs_level = 1760;
-    }
-    else if (level > 30 && level < 256)
+    else if (level >= 30 && level < 256)
     {
         cs_level = (level - 31) * 260 + 1760;
     }
@@ -1632,19 +1804,19 @@ static void aml_8726m_power_on_bl(void)
     msleep(100);
     SET_CBUS_REG_MASK(PERIPHS_PIN_MUX_2, (1<<31));
     msleep(100);
-    //EIO -> OD4: 0
-    #ifdef CONFIG_SN7325
-    configIO(0, 0);
-    setIO_level(0, 0, 4);
-    #endif
+    //EIO -> PP1: 0   //EIO -> OD4: 0
+#ifdef CONFIG_SN7325
+    configIO(1, 0);  //configIO(0, 0);
+    setIO_level(1, 0, 1);  //setIO_level(0, 0, 4);
+#endif
 }
 
 static void aml_8726m_power_off_bl(void)
 {
-    //EIO -> OD4: 1
+    //EIO -> PP1: 0  //EIO -> OD4: 1
 #ifdef CONFIG_SN7325
-    configIO(0, 0);
-    setIO_level(0, 1, 4);
+    configIO(1, 0);  //configIO(0, 0);
+    setIO_level(1, 1, 1);  //setIO_level(0, 1, 4);
 #endif
     CLEAR_CBUS_REG_MASK(PERIPHS_PIN_MUX_2, (1<<31));
     CLEAR_CBUS_REG_MASK(PWM_MISC_REG_AB, (1 << 0));
@@ -1804,7 +1976,7 @@ static void bt_device_init(void)
 //	CLEAR_CBUS_REG_MASK(PREG_GGPIO_EN_N, (1<<18));
 //	SET_CBUS_REG_MASK(PREG_GGPIO_O, (1<<18));
 	    configIO(0, 0);
-        setIO_level(0, 1, 5);	
+        setIO_level(0, 1, 7);	//OD7
 	
 	/* reset */
 	CLEAR_CBUS_REG_MASK(PREG_GGPIO_EN_N, (1<<12));
@@ -1940,7 +2112,10 @@ static struct platform_device __initdata *platform_devs[] = {
     #endif
     #ifdef CONFIG_BT_DEVICE  
         &bt_device,
-    #endif    	
+    #endif
+    #ifdef CONFIG_AR1520_GPS
+	&aml_ar1520_device,
+    #endif
 };
 static struct i2c_board_info __initdata aml_i2c_bus_info[] = {
 
@@ -2132,6 +2307,7 @@ static __init void m1_init_machine(void)
     meson_cache_init();
 
     power_hold();
+    pm_power_off = set_bat_off;
     device_clk_setting();
     device_pinmux_init();
 #ifdef CONFIG_VIDEO_AMLOGIC_CAPTURE
@@ -2152,6 +2328,7 @@ static __init void m1_init_machine(void)
     spi_register_board_info(spi_board_info_list, ARRAY_SIZE(spi_board_info_list));
 #endif
     disable_unused_model();
+
 }
 
 /*VIDEO MEMORY MAPING*/

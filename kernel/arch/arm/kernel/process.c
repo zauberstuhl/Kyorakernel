@@ -87,12 +87,12 @@ void arm_machine_restart(char mode, const char *cmd)
 {
 	volatile u32* sram_vaddr = (u32*)ioremap(0xC9001E00, 4); 
 	*sram_vaddr = AMLOGIC_NORMAL_BOOT;
-    
+
 	if(cmd){   
 		if(strcmp(cmd, "normal_reboot") == 0){
 			*sram_vaddr = AMLOGIC_NORMAL_BOOT;
 		}
-		if(strcmp(cmd, "factory_reset_reboot") == 0){
+		if(strcmp(cmd, "factory_reset_reboot") == 0 || strcmp(cmd, "recovery") == 0) {
 			*sram_vaddr = AMLOGIC_FACTORY_RESET_REBOOT;
 		}
 		if(strcmp(cmd, "update_reboot") == 0){

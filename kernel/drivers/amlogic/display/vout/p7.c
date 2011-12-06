@@ -28,6 +28,7 @@
 #include <linux/delay.h>
 #include <linux/platform_device.h>
 #include <linux/vout/tcon.h>
+#include <linux/logo/logo.h>
 
 #ifdef CONFIG_SN7325
 #include <linux/sn7325.h>
@@ -268,7 +269,7 @@ static void set_tcon_pinmux(void)
 static void t13_power_on(void)
 {
     video_dac_disable();
-    set_tcon_pinmux();
+//    set_tcon_pinmux();
     power_on_lcd();
     printk("\n\nt13_power_on...\n\n");
 }
@@ -279,10 +280,15 @@ static void t13_power_off(void)
 
 static void t13_io_init(void)
 {
-    printk("\n\nT13 LCD Init.\n\n");
-
-    set_tcon_pinmux();
-    power_on_lcd();
+    logo_object_t  *init_logo_obj=NULL;
+    printk("\n\nP7 LCD Init.\n\n");
+    init_logo_obj = get_current_logo_obj();
+     if(NULL==init_logo_obj ||!init_logo_obj->para.loaded)
+    {
+    	printk("enable lcd pinmux\n");
+	set_tcon_pinmux();	
+    	power_on_lcd();
+    }
 }
 
 #ifdef CONFIG_AM_LOGO
@@ -308,11 +314,10 @@ static struct platform_device tcon_dev = {
 
 static int __init t13_init(void)
 {
+  
     t13_setup_gama_table(&tcon_config);
     t13_io_init();
-
     platform_device_register(&tcon_dev);
-
     return 0;
 }
 

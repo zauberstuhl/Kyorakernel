@@ -345,7 +345,11 @@ uint dhd_roam = 1;
 uint dhd_radio_up = 1;
 
 /* Network inteface name */
+#ifdef CONFIG_MACH_MESON_8726M_REFC08
+char iface_name[IFNAMSIZ] = "wlan0";
+#else
 char iface_name[IFNAMSIZ];
+#endif
 module_param_string(iface_name, iface_name, IFNAMSIZ, 0);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0))

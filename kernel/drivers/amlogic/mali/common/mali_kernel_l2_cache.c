@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 ARM Limited. All rights reserved.
+ * Copyright (C) 2010-2011 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -159,6 +159,9 @@ struct mali_kernel_subsystem mali_subsystem_l2_cache =
 	NULL,                        /**< session_begin */
 	NULL,                        /**< session_end */
 	NULL,                        /**< broadcast_notification */
+#if MALI_STATE_TRACKING
+	NULL,                        /**< dump_state */
+#endif
 };
 
 
@@ -492,6 +495,7 @@ void mali_kernel_l2_cache_get_perf_counters(u32 *src0, u32 *val0, u32 *src1, u32
 
 		MALI_DEBUG_PRINT(5, ("L2 cache counters get: SRC0=%u, VAL0=%u, SRC1=%u, VAL1=%u\n", cur_src0, cur_val0, cur_src1, cur_val1));
 
+		/* Only update the counter source once, with the value from the first L2 cache unit. */
 		if (first_time)
 		{
 			*src0 = cur_src0;
@@ -499,6 +503,7 @@ void mali_kernel_l2_cache_get_perf_counters(u32 *src0, u32 *val0, u32 *src1, u32
 			first_time = 0;
 		}
 
+		/* Bail out if the L2 cache units have different counters set. */
 		if (*src0 == cur_src0 && *src1 == cur_src1)
 		{
 			*val0 += cur_val0;

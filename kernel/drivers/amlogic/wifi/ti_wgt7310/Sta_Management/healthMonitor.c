@@ -60,7 +60,7 @@
 #include "DrvMainModules.h"
 #include "TWDriverInternal.h"
 
-
+extern int SDIO_LOCKED_FLAG ;
 typedef struct
 {
     /* handles to other modules */
@@ -370,6 +370,9 @@ void healthMonitor_proccessFailureEvent (TI_HANDLE hHealthMonitor, TI_BOOL bTwdI
     /* Check failure event validity */
     if (pHealthMonitor->failureEvent < MAX_FAILURE_EVENTS)
     {
+    	SDIO_LOCKED_FLAG = 1;	
+			 //WLAN_OS_REPORT (("SDIO_LOCKED_FLAG = %d , ---%s--- !!\n",SDIO_LOCKED_FLAG,__func__));
+
         pHealthMonitor->recoveryTriggersNumber[pHealthMonitor->failureEvent] ++;
 
         TRACE2(pHealthMonitor->hReport, REPORT_SEVERITY_CONSOLE, "***** recovery trigger: failureEvent =%d *****, ts=%d\n", pHealthMonitor->failureEvent, os_timeStampMs(pHealthMonitor->hOs));

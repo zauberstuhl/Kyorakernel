@@ -6457,10 +6457,10 @@ static int wl_iw_set_priv(
 	    }
 #endif 
 	    else {
-			WL_TRACE(("Unknown PRIVATE command %s\n", extra));
+			WL_TRACE(("Unkown PRIVATE command %s\n", extra));
 			snprintf(extra, MAX_WX_STRING, "OK");
 			dwrq->length = strlen("OK") + 1;
-			WL_ERROR(("Unknown PRIVATE command, ignored\n"));
+			WL_ERROR(("Unkown PRIVATE command, ignored\n"));
 		}
 		WAKE_UNLOCK(iw->pub, WAKE_LOCK_PRIV);
 		WAKE_LOCK_DESTROY(iw->pub, WAKE_LOCK_PRIV);

@@ -425,6 +425,8 @@ TI_STATUS systemConfig(siteMgr_t *pSiteMgr)
 	dot11_ACParameters_t *p_ACParametersDummy = NULL;
     TtxCtrlHtControl tHtControl;
 
+	ECipherSuite eCipherSuite =0;
+	
     curRsnData = os_memoryAlloc(pSiteMgr->hOs, MAX_RSN_DATA_SIZE);
     if (!curRsnData)
         return TI_NOK;
@@ -612,18 +614,37 @@ TI_STATUS systemConfig(siteMgr_t *pSiteMgr)
      /* verify that WME flag enable */
      qosMngr_GetWmeEnableFlag (pSiteMgr->hQosMngr, &bWmeEnable); 
 
+	/* Privacy - Used later on HT */
+    pParam->paramType = RSN_ENCRYPTION_STATUS_PARAM;
+    status          = rsn_getParam(pSiteMgr->hRsn, pParam);
+   
+    if(status == TI_OK)
+    {
+        eCipherSuite = pParam->content.rsnEncryptionStatus;
+    } 
+
+
      if ((b11nEnable != TI_FALSE) &&
          (bWmeEnable != TI_FALSE) &&
          (pPrimarySite->tHtCapabilities.tHdr[0] != TI_FALSE) && 
          (pPrimarySite->tHtInformation.tHdr[0] != TI_FALSE))
      {
+
+    if((eCipherSuite != TWD_CIPHER_TKIP) && 
+		(eCipherSuite != TWD_CIPHER_WEP) && 
+		(eCipherSuite != TWD_CIPHER_WEP104)  )
+    	{
+    	
          TWD_CfgSetFwHtCapabilities (pSiteMgr->hTWD, &pPrimarySite->tHtCapabilities, TI_TRUE);
          TWD_CfgSetFwHtInformation (pSiteMgr->hTWD, &pPrimarySite->tHtInformation);
 
          /* the FW not supported in HT control field in TX */
-
-        tHtControl.bHtEnable = TI_FALSE;
+         tHtControl.bHtEnable = TI_FALSE;
          txCtrlParams_SetHtControl (pSiteMgr->hTxCtrl, &tHtControl);
+
+    	}
+	
+
      }
      else
      {

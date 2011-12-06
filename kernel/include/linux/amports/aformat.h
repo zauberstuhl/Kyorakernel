@@ -40,7 +40,12 @@ typedef enum {
     AFORMAT_WMA  = 14,
     AFORMAT_WMAPRO    = 15,
     AFORMAT_PCM_BLURAY	= 16,
-    AFORMAT_MAX    = 17
+    AFORMAT_ALAC  = 17,
+    AFORMAT_VORBIS    = 18,
+    AFORMAT_AAC_LATM   = 19,
+    AFORMAT_APE   = 20,
+    AFORMAT_UNSUPPORT = 21,
+    AFORMAT_MAX    = 22
 } aformat_t;
 
 #endif /* AFORMAT_H */

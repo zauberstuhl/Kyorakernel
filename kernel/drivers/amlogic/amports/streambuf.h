@@ -89,6 +89,7 @@ extern u32 stbuf_sub_rp_get(void);
 extern void stbuf_sub_rp_set(unsigned int sub_rp);
 extern u32 stbuf_sub_wp_get(void);
 extern u32 stbuf_sub_start_get(void);
+extern stream_buf_t* get_stream_buffer(int id);
 
 #endif /* STREAMBUF_H */
 

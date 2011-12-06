@@ -80,7 +80,7 @@
 
 /* save driver handle just for module cleanup */
 static TWlanDrvIfObj *pDrvStaticHandle;  
-
+extern int SDIO_LOCKED_FLAG ;
 #define OS_SPECIFIC_RAM_ALLOC_LIMIT			(0xFFFFFFFF)	/* assume OS never reach that limit */
 
 
@@ -279,7 +279,7 @@ void wlanDrvIf_UpdateDriverState (TI_HANDLE hOs, EDriverSteadyState eDriverState
  */ 
 irqreturn_t wlanDrvIf_HandleInterrupt (int irq, void *hDrv, struct pt_regs *cpu_regs)
 {
-	//printk("aml ent wlanDrvIf_HandleInterrupt \n");
+//	printk("aml ent wlanDrvIf_HandleInterrupt \n");
 	TWlanDrvIfObj *drv = (TWlanDrvIfObj *)hDrv;
 	TWD_InterruptRequest (drv->tCommon.hTWD);
 
@@ -353,8 +353,11 @@ static void wlanDrvIf_DriverTask(struct work_struct *work)
 	context_DriverTask (drv->tCommon.hContext);
 
 	os_profile (drv, 1, 0);
-	os_wake_lock_timeout(drv);
-	os_wake_unlock(drv);
+
+    /* First prevent suspend for 1 sec if requested, and then remove the current prevention */
+    os_WakeLockTimeout (drv);
+    os_WakeUnlock (drv);
+
 #ifdef STACK_PROFILE
 	curr2 = check_stack_stop(&base2, 0);
 	if (base2 == base1) {
@@ -648,12 +651,14 @@ int wlanDrvIf_Start (struct net_device *dev)
 	 *  Insert Start command in DrvMain action queue, request driver scheduling 
 	 *      and wait for action completion (all init process).
 	 */
-	os_wake_lock_timeout_enable(drv);
-    if (TI_OK != drvMain_InsertAction (drv->tCommon.hDrvMain, ACTION_TYPE_START)) 
-    {
-        return -ENODEV;
-    }
-
+		//printk("SDIO_LOCKED_FLAG = %d , ---%s--- !!\n",SDIO_LOCKED_FLAG,__func__);
+	  if(!SDIO_LOCKED_FLAG){
+		os_WakeLockTimeoutEnable (drv);
+	    if (TI_OK != drvMain_InsertAction (drv->tCommon.hDrvMain, ACTION_TYPE_START)) 
+	    {
+	        return -ENODEV;
+	    }
+	}
     return 0;
 }
 
@@ -716,17 +721,18 @@ int wlanDrvIf_Stop (struct net_device *dev)
 	 *  Insert Stop command in DrvMain action queue, request driver scheduling 
 	 *      and wait for Stop process completion.
 	 */
-	os_printf("%s LINE %d\n", __func__, __LINE__);
-	os_wake_lock_timeout_enable(drv);
-	os_printf("%s LINE %d\n", __func__, __LINE__);
-    if (TI_OK != drvMain_InsertAction (drv->tCommon.hDrvMain, ACTION_TYPE_STOP)) 
-    {
-        return -ENODEV;
-    }
-	os_printf("%s\n", __func__);
-	return 0;
+  if(!SDIO_LOCKED_FLAG){
+	 os_printf("%s LINE %d\n", __func__, __LINE__);
+	 os_WakeLockTimeoutEnable (drv);
+	 os_printf("%s LINE %d\n", __func__, __LINE__);
+	    if (TI_OK != drvMain_InsertAction (drv->tCommon.hDrvMain, ACTION_TYPE_STOP)) 
+	    {
+	        return -ENODEV;
+	    }
+  }
+ os_printf("%s\n", __func__);
+ return 0;
 }
-
 int wlanDrvIf_Release (struct net_device *dev)
 {
 	/* TWlanDrvIfObj *drv = (TWlanDrvIfObj *)NETDEV_GET_PRIVATE(dev); */
@@ -887,7 +893,7 @@ static int wlanDrvIf_Create (void)
 	if (rc)	{
 		goto drv_create_end_2;
 	}
-
+#if 0
 	/* Create the events socket interface */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
 	drv->wl_sock = netlink_kernel_create( NETLINK_USERSOCK, 0, NULL, THIS_MODULE );
@@ -899,7 +905,7 @@ static int wlanDrvIf_Create (void)
 		rc = -EINVAL;
 		goto drv_create_end_3;
 	}
-
+#endif
 	/* Create all driver modules and link their handles */
 	rc = drvMain_Create (drv,
 			&drv->tCommon.hDrvMain,
@@ -987,16 +993,15 @@ static void wlanDrvIf_Destroy (TWlanDrvIfObj *drv)
 {
 	if (!drv)
 		return;
-
 	if (drv->tiwlan_wq) {
 		cancel_work_sync(&drv->tWork);
 		flush_workqueue(drv->tiwlan_wq);
 	}
-
 	/* Release the driver network interface */
+
 	if (drv->netdev) {
 		netif_stop_queue  (drv->netdev);
-		wlanDrvIf_Stop    (drv->netdev);
+		wlanDrvIf_Stop(drv->netdev);
 		unregister_netdev (drv->netdev);
 		free_netdev (drv->netdev);
 	}
@@ -1009,7 +1014,7 @@ static void wlanDrvIf_Destroy (TWlanDrvIfObj *drv)
 	/* close the ipc_kernel socket*/
 	if (drv && drv->wl_sock) 
 	{
-		sock_release (drv->wl_sock->sk_socket);
+//		sock_release (drv->wl_sock->sk_socket);
 	}
 	/* Release the driver interrupt (or polling timer) */
 #ifdef PRIODIC_INTERRUPT
@@ -1022,8 +1027,7 @@ static void wlanDrvIf_Destroy (TWlanDrvIfObj *drv)
 #endif
 
 	if (drv->tiwlan_wq)
-		destroy_workqueue(drv->tiwlan_wq);
-		
+	destroy_workqueue(drv->tiwlan_wq);
 #ifdef CONFIG_HAS_WAKELOCK
 	wake_lock_destroy(&drv->wl_wifi);
 	wake_lock_destroy(&drv->wl_rxwake);
@@ -1069,6 +1073,7 @@ void wlanDrvIf_remove (void)
 }
 EXPORT_SYMBOL_GPL(wlanDrvIf_remove);
 
+extern int wifi_sdio_check_func(void);
 /** 
  * \fn     wlanDrvIf_ModuleInit  &  wlanDrvIf_ModuleExit
  * \brief  Linux Init/Exit functions
@@ -1084,12 +1089,14 @@ static int __init wlanDrvIf_ModuleInit (void)
 {
 	printk(KERN_INFO "TIWLAN: driver init\n");
 	sdioDrv_init();
+	if (wifi_sdio_check_func())
+		return 0;
 	return wlanDrvIf_Create ();
 }
 
 static void __exit wlanDrvIf_ModuleExit (void)
 {
-//	wlanDrvIf_Destroy (pDrvStaticHandle);
+	wlanDrvIf_Destroy (pDrvStaticHandle);//nathan
 	sdioDrv_exit();
 	printk (KERN_INFO "TI WLAN: driver unloaded\n");
 }

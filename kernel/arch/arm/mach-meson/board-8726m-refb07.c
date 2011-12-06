@@ -168,10 +168,10 @@ static struct platform_device adc_ts_device = {
 #include <linux/adc_keypad.h>
 
 static struct adc_key adc_kp_key[] = {
-    {KEY_PAGEDOWN,          "vol-", CHAN_4, 0, 60},
-    {KEY_PAGEUP,            "vol+", CHAN_4, 398, 60},
-    {KEY_TAB,               "exit", CHAN_4, 623, 60},
-    {KEY_LEFTMETA,          "menu", CHAN_4, 849, 60},
+    {KEY_VOLUMEDOWN,        "vol-", CHAN_4, 0, 60},
+    {KEY_VOLUMEUP,          "vol+", CHAN_4, 398, 60},
+    {KEY_BACK,              "exit", CHAN_4, 623, 60},
+    {KEY_MENU,              "menu", CHAN_4, 849, 60},
 };
 
 static struct adc_kp_platform_data adc_kp_pdata = {
@@ -271,7 +271,7 @@ static int it7230_get_irq_level(void)
 }
 
 static struct cap_key it7230_keys[] = {
-    { KEY_ZOOM,   0x0001, "search"},
+    { KEY_SEARCH,   0x0001, "search"},
     { KEY_HOME,     0x0002, "home"},
     { KEY_MENU,     0x0004, "menu"},
     { KEY_BACK,     0x0008, "back"},
@@ -1860,6 +1860,7 @@ static __init void m1_init_machine(void)
     meson_cache_init();
 
     power_hold();
+    pm_power_off = set_bat_off;
     device_clk_setting();
     device_pinmux_init();
     platform_add_devices(platform_devs, ARRAY_SIZE(platform_devs));

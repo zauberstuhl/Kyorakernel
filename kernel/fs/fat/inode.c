@@ -1493,6 +1493,9 @@ int fat_fill_super(struct super_block *sb, void *data, int silent,
 		goto out_fail;
 	}
 
+	sbi->free_clusters = -1;
+	sbi->free_clus_valid = 0;
+	fat_count_free_clusters(sb);
 	return 0;
 
 out_invalid:

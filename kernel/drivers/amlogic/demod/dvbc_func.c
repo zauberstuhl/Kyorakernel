@@ -279,7 +279,7 @@ static void dvbc_reg_initial(struct aml_demod_sta *demod_sta)
     }
     
     apb_write_reg(0, 0x00c, 0xfffffffe);  // adc_cnt, symb_cnt
-
+	
     if (clk_freq == 0)
         afifo_ctr = 0;
     else
@@ -503,3 +503,18 @@ void dvbc_isr(struct aml_demod_sta *demod_sta)
 	}
     }
 }
+
+int dvbc_isr_islock(void)
+{
+#define IN_SYNC4_MASK (0x80)
+
+    u32 stat, mask;
+
+    stat = apb_read_reg(0, 0xd4);
+    apb_write_reg(0, 0xd4, 0);
+    mask = apb_read_reg(0, 0xd0);
+    stat &= mask;
+
+    return ((stat&IN_SYNC4_MASK)==IN_SYNC4_MASK);
+}
+

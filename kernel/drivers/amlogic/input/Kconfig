@@ -12,11 +12,17 @@ source "drivers/amlogic/input/adc_ts/Kconfig"
 
 source "drivers/amlogic/input/adc_keypad/Kconfig"
 
+source "drivers/amlogic/input/simcard_detect/Kconfig"
+
 source "drivers/amlogic/input/key_input/Kconfig"
 
 source "drivers/amlogic/input/touch_screen/Kconfig"
 
 source "drivers/amlogic/input/touch_keypad/Kconfig"
+
+source "drivers/amlogic/input/vfd/Kconfig"
+
+source "drivers/amlogic/input/irreceiver/Kconfig"
 
 endmenu
 

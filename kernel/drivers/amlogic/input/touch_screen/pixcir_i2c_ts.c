@@ -29,8 +29,12 @@
 #include <linux/delay.h>
 #include <linux/slab.h>  //for mini6410 2.6.36 kree(),kmalloc()
 #include <mach/gpio.h>
-
-#include "pixcir_i2c_ts.h"
+#include <linux/i2c/pixcir_i2c_ts.h>
+#ifdef CONFIG_HAS_EARLYSUSPEND
+#include <linux/earlysuspend.h>
+static void pixcir_i2c_ts_early_suspend(struct early_suspend *handler);
+static void pixcir_i2c_ts_early_resume(struct early_suspend *handler);
+#endif
 
 #define DRIVER_VERSION "v1.5"
 #define DRIVER_AUTHOR "Bee<http://www.pixcir.com.cn>"
@@ -38,14 +42,9 @@
 #define DRIVER_LICENSE "GPL"
 
 #define PIXCIR_DEBUG 0
-
 #define TWO_POINTS
+#define test_bit(dat, bitno) ((dat) & (1<<(bitno)))
 
-#define gpio_shutdown ((GPIOD_bank_bit2_24(23)<<16) |GPIOD_bit_bit2_24(23))
-#define gpio_irq ((GPIOD_bank_bit2_24(24)<<16) |GPIOD_bit_bit2_24(24))
-#define DBG_SIZE 100
-int dbg_buf[DBG_SIZE][2];
-int dbg_cnt=0;
 /*********************************V2.0-Bee-0928-TOP****************************************/
 
 #define SLAVE_ADDR		0x5c
@@ -142,10 +141,12 @@ struct pixcir_i2c_ts_data
 	struct input_dev *input;
 	struct delayed_work work;
 	int irq;
-	int discard;
-	int oldtouching;
+	struct pixcir_i2c_ts_platform_data *pdata;
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	struct early_suspend early_suspend;
+#endif
+	u8 key_state;
 };
-
 static int i2c_read_bytes(struct i2c_client *client, uint8_t *buf, int len)
 {
 	struct i2c_msg msgs[2];
@@ -164,8 +165,11 @@ static int i2c_read_bytes(struct i2c_client *client, uint8_t *buf, int len)
 	return ret;
 }
 
-static void pixcir_ts_main(struct pixcir_i2c_ts_data *tsdata)
+static void pixcir_ts_poscheck(struct work_struct *work)
 {
+	struct pixcir_i2c_ts_data *tsdata = container_of(work,
+			struct pixcir_i2c_ts_data,
+			work.work);
 	unsigned char touching = 0;
 	unsigned char oldtouching = 0;
 	int posx1, posy1, posx2, posy2;
@@ -181,149 +185,91 @@ static void pixcir_ts_main(struct pixcir_i2c_ts_data *tsdata)
 		dev_err(&tsdata->client->dev, "Unable to read i2c page!(%d)\n", ret);
 		goto out;	
 	}
-	posy1 = ((Rdbuf[3] << 8) | Rdbuf[2]);
-	posx1 = ((Rdbuf[5] << 8) | Rdbuf[4]);
-	posy2 = ((Rdbuf[7] << 8) | Rdbuf[6]);
-	posx2 = ((Rdbuf[9] << 8) | Rdbuf[8]);
+
+	posx1 = ((Rdbuf[3] << 8) | Rdbuf[2]);
+	posy1 = ((Rdbuf[5] << 8) | Rdbuf[4]);
+	posx2 = ((Rdbuf[7] << 8) | Rdbuf[6]);
+	posy2 = ((Rdbuf[9] << 8) | Rdbuf[8]);
 	touching = Rdbuf[0];
 	oldtouching = Rdbuf[1];
-	//printk("touching:%-3d,oldtouching:%-3d,x1:%-6d,y1:%-6d,x2:%-6d,y2:%-6d\n",touching, oldtouching, posx1, posy1, posx2, posy2);
+	if (tsdata->pdata->swap_xy) {
+		swap(posx1, posy1);
+		swap(posx2, posy2);
+	}
+	if (tsdata->pdata->xpol) {
+		posx1 = tsdata->pdata->xmax + tsdata->pdata->xmin - posx1;
+		posx2 = tsdata->pdata->xmax + tsdata->pdata->xmin - posx2;
+	}
+	if (tsdata->pdata->ypol) {
+		posy1 = tsdata->pdata->ymax + tsdata->pdata->ymin - posy1;
+		posy2 = tsdata->pdata->ymax + tsdata->pdata->ymin - posy2;
+	}
+#if PIXCIR_DEBUG
+	printk("touching:%-3d,oldtouching:%-3d,x1:%-6d,y1:%-6d,x2:%-6d,y2:%-6d\n",touching, oldtouching, posx1, posy1, posx2, posy2);
+#endif
 
-	if ((touching > 3)
-	|| (posx1 < TOUCHSCREEN_MINX) || (posx1 > TOUCHSCREEN_MAXX)
-	|| (posy1 < TOUCHSCREEN_MINY) || (posy1 > TOUCHSCREEN_MAXY)
-	|| (posx2 < TOUCHSCREEN_MINX) || (posx2 > TOUCHSCREEN_MAXX)
-	|| (posy2 < TOUCHSCREEN_MINY) || (posy2 > TOUCHSCREEN_MAXY)) {
-		//invalid data,must discard the next twice data;
-		tsdata->discard = 2;
+
+	if (touching)
+	{
+		input_report_abs(tsdata->input, ABS_X, posx1);
+		input_report_abs(tsdata->input, ABS_Y, posy1);
+		input_report_key(tsdata->input, BTN_TOUCH, 1);
+		input_report_abs(tsdata->input, ABS_PRESSURE, 1);
 	}
-	else if (tsdata->discard) {
-		tsdata->discard--;
-	}
-	else {
-		if ((!(touching & 1) && (oldtouching & 1))
-		|| ((touching & 1) && !(oldtouching & 1) && tsdata->oldtouching)) {
-			input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, 0);
-			input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, 0);
-			input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, 0);
-			input_mt_sync(tsdata->input);
-//			printk("point 1 up\n");
-		}
-		if (!(touching & 2)&& (oldtouching & 2)) {
-			input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, 1);
-			input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, 0);
-			input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, 0);
-			input_mt_sync(tsdata->input);
-//			printk("point 2 up\n");
-		}
-		if (touching & 1) {
-			input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, 0);
-			input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, z);
-			input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, w);
-			input_report_abs(tsdata->input, ABS_MT_POSITION_X, posx1);
-			input_report_abs(tsdata->input, ABS_MT_POSITION_Y, posy1);
-			input_mt_sync(tsdata->input);
-			dbg_buf[dbg_cnt][0] = posx1;
-			dbg_buf[dbg_cnt][1] = posy1;
-			if(++dbg_cnt == DBG_SIZE) dbg_cnt = DBG_SIZE - 1;		
-//			printk("point 1 (%d, %d)\n", posx1, posy1);
-		}
-		if (touching & 2) {
-			input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, 1);
-			input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, z);
-			input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, w);
-			input_report_abs(tsdata->input, ABS_MT_POSITION_X, posx2);
-			input_report_abs(tsdata->input, ABS_MT_POSITION_Y, posy2);
-			input_mt_sync(tsdata->input);
-//			printk("point 2 (%d, %d)\n", posx2, posy2);
-		}
-		input_sync(tsdata->input);
-		tsdata->oldtouching = touching;
+	else
+	{
+		input_report_key(tsdata->input, BTN_TOUCH, 0);
+		input_report_abs(tsdata->input, ABS_PRESSURE, 0);
 	}
 
-/*
-	else {
-		for (i=0; i<2; i++) {
-			event[i].x = (Rdbuf[i*4+5] << 8) | Rdbuf[i*4+4];
-			event[i].y = (Rdbuf[i*4+3] << 8) | Rdbuf[i*4+2];
-			event[i].cur_sta = (Rdbuf[0] >> i) & 1;
-			event[i].old_sta = (Rdbuf[1] >> i) & 1;
-			
-			if (event[i].cur_sta == UP) {
-				if((event[i].old_sta == DOWN)||(event[i].last_sta == DOWN)) {
-					input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, i);
-					input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, 0);
-					input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, 0);
-					input_mt_sync(tsdata->input);
-					ts_dbg("point_%d up\n", i);
-				}
-			}
-			
-			else if (event[i].cur_sta == DOWN) {
-				if ((event[i].old_sta == UP)&&(event[i].last_sta == DOWN)) {
-					input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, i);
-					input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, 0);
-					input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, 0);
-					input_mt_sync(tsdata->input);
-					ts_dbg("point_%d up\n", i);
-				}
-				input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, i);
-				input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, z);
-				input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, w);
-				input_report_abs(tsdata->input, ABS_MT_POSITION_X, event[i].x);
-				input_report_abs(tsdata->input, ABS_MT_POSITION_Y, event[i].y);
-				input_mt_sync(tsdata->input);
-				ts_dbg("point_%d (%d, %d)\n", i, event[i].x, event[i].y);
-			}
-			event[i].last_sta = event[i].cur_sta;
-		}	
+	if (!(touching))
+	{
+		z = 0;
+		w = 0;
 	}
-*/
-	out:
-		return;
-}
-
-static void pixcir_ts_poscheck(struct work_struct *work)
-{
-	struct pixcir_i2c_ts_data *tsdata = container_of(work,
-			struct pixcir_i2c_ts_data, work.work);
-
-	tsdata->oldtouching = 0;
-	dbg_cnt = 0;
-	while(!gpio_get_value(gpio_irq)){
-		pixcir_ts_main(tsdata);
-		//msleep(15);
-		//mdelay(6);
-		schedule();
-	}
-//	input_report_key(tsdata->input, BTN_TOUCH, 0);
-//	input_report_abs(tsdata->input, ABS_PRESSURE, 0);
 #ifdef TWO_POINTS
-	if (tsdata->oldtouching & 1) {
-		input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, 0);
-		input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, 0);
-		input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, 0);
+	input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, z);
+	input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, w);
+	input_report_abs(tsdata->input, ABS_MT_POSITION_X, posx1);
+	input_report_abs(tsdata->input, ABS_MT_POSITION_Y, posy1);
+	input_mt_sync(tsdata->input);
+	if (touching==2)
+	{
+		input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, z);
+		input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, w);
+		input_report_abs(tsdata->input, ABS_MT_POSITION_X, posx2);
+		input_report_abs(tsdata->input, ABS_MT_POSITION_Y, posy2);
 		input_mt_sync(tsdata->input);
-//		printk("point 1 up\n");
-	}
-	if (tsdata->oldtouching & 2) {
-		input_report_abs(tsdata->input, ABS_MT_TRACKING_ID, 1);
-		input_report_abs(tsdata->input, ABS_MT_TOUCH_MAJOR, 0);
-		input_report_abs(tsdata->input, ABS_MT_WIDTH_MAJOR, 0);
-		input_mt_sync(tsdata->input);
-//		printk("point 2 up\n");
 	}
 #endif
-	if (tsdata->oldtouching) {
-		input_sync(tsdata->input);
+	input_sync(tsdata->input);
+
+	if (tsdata->pdata->key_code) {
+		Rdbuf[0] = 0x29;
+		if (i2c_read_bytes(tsdata->client, Rdbuf, 1) != 2) {
+			dev_err(&tsdata->client->dev, "Unable to read i2c page!\n");
+			goto out;	
+		}
+		int i;
+		for (i=0; i<tsdata->pdata->key_num; i++) {
+			if (!test_bit(tsdata->key_state, i) && test_bit(Rdbuf[0], i)) {
+				input_report_key(tsdata->input,  tsdata->pdata->key_code[i],  1);
+#if PIXCIR_DEBUG
+				printk("key(%d) down\n", tsdata->pdata->key_code[i]);
+#endif
+			}
+			else if (test_bit(tsdata->key_state, i) && !test_bit(Rdbuf[0], i)) {
+				input_report_key(tsdata->input, tsdata->pdata->key_code[i],  0);
+#if PIXCIR_DEBUG
+				printk("key(%d) up\n", tsdata->pdata->key_code[i]);
+#endif
+			}
+		}
+		tsdata->key_state = Rdbuf[0];
 	}
-//	printk("total = %d\n", dbg_cnt);
-//	int i;
-//	for(i=0;i<dbg_cnt;i++) {
-//		printk("%4d(%4d, %4d)\n", i, dbg_buf[i][0], dbg_buf[i][1]);
-//	}
-//	dbg_cnt = 0;
-	enable_irq(tsdata->irq);
+
+	out: enable_irq(tsdata->irq);
+
 }
 
 static irqreturn_t pixcir_ts_isr(int irq, void *dev_id)
@@ -331,8 +277,8 @@ static irqreturn_t pixcir_ts_isr(int irq, void *dev_id)
 	struct pixcir_i2c_ts_data *tsdata = dev_id;
 
 	disable_irq_nosync(irq);
-//	printk("enter irq\n");
 	queue_work(pixcir_wq, &tsdata->work.work);
+
 	return IRQ_HANDLED;
 }
 
@@ -349,15 +295,20 @@ static int pixcir_i2c_ts_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
 {
 
+	struct pixcir_i2c_ts_platform_data *pdata = client->dev.platform_data;
 	struct pixcir_i2c_ts_data *tsdata;
 	struct input_dev *input;
 	struct device *dev;
 	struct i2c_dev *i2c_dev;
 	int error;
-	int i;
-	u8 buf[33];
 
 	printk("pixcir_i2c_ts_probe\n");
+
+	if (!pdata) {
+		dev_err(&client->dev, "failed to load platform data!\n");
+		return -ENODEV;
+	}
+	
 	tsdata = kzalloc(sizeof(*tsdata), GFP_KERNEL);
 	if (!tsdata)
 	{
@@ -367,6 +318,8 @@ static int pixcir_i2c_ts_probe(struct i2c_client *client,
 		return error;
 	}
 
+	tsdata->key_state = 0;
+	tsdata->pdata = pdata;
 	dev_set_drvdata(&client->dev, tsdata);
 
 	input = input_allocate_device();
@@ -378,15 +331,15 @@ static int pixcir_i2c_ts_probe(struct i2c_client *client,
 		kfree(tsdata);
 	}
 
-	input->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS) | BIT_MASK(EV_SYN);
-	input->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
-	input->absbit[0] = BIT(ABS_X) | BIT(ABS_Y); // for android
-	input_set_abs_params(input, ABS_X, TOUCHSCREEN_MINX, TOUCHSCREEN_MAXX, 0, 0);
-	input_set_abs_params(input, ABS_Y, TOUCHSCREEN_MINY, TOUCHSCREEN_MAXY, 0, 0);
-	input_set_abs_params(input, ABS_PRESSURE, 0, 255, 0, 0);
+	set_bit(EV_SYN, input->evbit);
+	set_bit(EV_KEY, input->evbit);
+	set_bit(EV_ABS, input->evbit);
+	set_bit(BTN_TOUCH, input->keybit);
+	input_set_abs_params(input, ABS_X, pdata->xmin, pdata->xmax, 0, 0);
+	input_set_abs_params(input, ABS_Y, pdata->ymin, pdata->ymax, 0, 0);
 #ifdef TWO_POINTS
-	input_set_abs_params(input, ABS_MT_POSITION_X, TOUCHSCREEN_MINX, TOUCHSCREEN_MAXX, 0, 0);
-	input_set_abs_params(input, ABS_MT_POSITION_Y, TOUCHSCREEN_MINY, TOUCHSCREEN_MAXY, 0, 0);
+	input_set_abs_params(input, ABS_MT_POSITION_X, pdata->xmin, pdata->xmax, 0, 0);
+	input_set_abs_params(input, ABS_MT_POSITION_Y, pdata->ymin, pdata->ymax, 0, 0);
 	input_set_abs_params(input, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
 	input_set_abs_params(input, ABS_MT_WIDTH_MAJOR, 0, 25, 0, 0);
 #endif
@@ -396,6 +349,17 @@ static int pixcir_i2c_ts_probe(struct i2c_client *client,
 	input->dev.parent = &client->dev;
 	input->open = pixcir_ts_open;
 	input->close = pixcir_ts_close;
+
+	if (pdata->key_code && pdata->key_num) {
+//    set_bit(EV_KEY, input->evbit);
+		set_bit(EV_REP, input->evbit);
+		int i;
+		for (i=0; i<pdata->key_num; i++) {
+			set_bit(pdata->key_code[i], input->keybit);
+		}
+		input->rep[REP_DELAY]=1000;
+		input->rep[REP_PERIOD]=300;
+	}
 
 	input_set_drvdata(input, tsdata);
 
@@ -412,12 +376,10 @@ static int pixcir_i2c_ts_probe(struct i2c_client *client,
 		kfree(tsdata);
 	}
 
-	tsdata->discard = 0;
-	tsdata->oldtouching = 0;
-	gpio_direction_output(gpio_shutdown, 1);
-	gpio_direction_input(gpio_irq);
-	gpio_enable_edge_int(gpio_to_idx(gpio_irq), 1, 0);
-	if (request_irq(tsdata->irq, pixcir_ts_isr, IRQF_TRIGGER_FALLING,client->name, tsdata))
+	gpio_direction_output(pdata->gpio_shutdown, 1);
+	gpio_direction_input(pdata->gpio_irq);
+	gpio_enable_edge_int(gpio_to_idx(pdata->gpio_irq), 1, tsdata->irq - INT_GPIO_0);
+	if (request_irq(tsdata->irq, pixcir_ts_isr, IRQF_TRIGGER_LOW,client->name, tsdata))
 	{
 		dev_err(&client->dev, "Unable to request touchscreen IRQ.\n");
 		input_unregister_device(input);
@@ -444,22 +406,15 @@ static int pixcir_i2c_ts_probe(struct i2c_client *client,
 	/*********************************V2.0-Bee-0928-BOTTOM****************************************/
 	dev_err(&tsdata->client->dev, "insmod successfully!\n");
 
-	msleep(200);
-	memset(buf, 0xff, sizeof(buf));
-	buf[0] = 20;
-	i2c_master_send(tsdata->client, buf, 1);
-	i2c_master_recv(tsdata->client, buf, sizeof(buf));
-	for(i=0; i<sizeof(buf); i++)
-		printk("register[%d] = %d\n ", i, buf[i]);
-	
-//	msleep(1);
-//	//calibration
-//	buf[0] = 0x37;
-//	buf[1] = 0x03;
-//	i2c_master_send(tsdata->client, buf, 2);
-//	msleep(5000);
-	
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	tsdata->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
+	tsdata->early_suspend.suspend = pixcir_i2c_ts_early_suspend;
+	tsdata->early_suspend.resume = pixcir_i2c_ts_early_resume;
+	register_early_suspend(&tsdata->early_suspend);
+	printk("Register early_suspend done\n");
+#endif
 	return 0;
+
 }
 
 static int pixcir_i2c_ts_remove(struct i2c_client *client)
@@ -481,6 +436,10 @@ static int pixcir_i2c_ts_remove(struct i2c_client *client)
 	input_unregister_device(tsdata->input);
 	kfree(tsdata);
 	dev_set_drvdata(&client->dev, NULL);
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	unregister_early_suspend(&tsdata->early_suspend);
+#endif
 	return 0;
 }
 
@@ -503,6 +462,23 @@ static int pixcir_i2c_ts_resume(struct i2c_client *client)
 
 	return 0;
 }
+
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void pixcir_i2c_ts_early_suspend(struct early_suspend *handler)
+{
+	struct pixcir_i2c_ts_data *tsdata = container_of(handler,	struct pixcir_i2c_ts_data, early_suspend);
+	printk("%s\n", __FUNCTION__);
+	pixcir_i2c_ts_suspend(tsdata->client, PMSG_SUSPEND);
+}
+
+static void pixcir_i2c_ts_early_resume(struct early_suspend *handler)
+{
+	struct pixcir_i2c_ts_data *tsdata = container_of(handler,	struct pixcir_i2c_ts_data, early_suspend);
+	printk("%s\n", __FUNCTION__);
+	pixcir_i2c_ts_resume(tsdata->client);
+}
+#endif // #ifdef CONFIG_HAS_EARLYSUSPEND
 
 /*********************************V2.0-Bee-0928****************************************/
 /*                        	  pixcir_open                                         */

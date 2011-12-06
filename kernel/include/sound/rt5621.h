@@ -11,6 +11,7 @@
 
 struct rt5621_platform_data {
     int (*is_hp_pluged)(void);
+    void (*mute_func)(int flag);
 };
 
 #endif

@@ -18,6 +18,7 @@
 #include <asm/div64.h>
 #include "../aml/aml_audio_hw.h"
 #include "rt5621.h"
+#include "../aml/aml_pcm.h"
 
 #if REALTEK_HWDEP
 
@@ -69,7 +70,7 @@ static struct rt5621_reg init_data[] =
     {RT5621_MIC_CTRL,               0x0500},    //set Mic1,Mic2 boost 20db
     {RT5621_SPK_OUT_VOL,            0x8080},    //default speaker volume to 0db
     {RT5621_HP_OUT_VOL,             0x8888},    //default HP volume to -12db
-    {RT5621_ADD_CTRL_REG,           0x5f00},    //Class AB/D speaker ratio is 1VDD
+    {RT5621_ADD_CTRL_REG,           0xdf00},    //Class AB/D speaker ratio is 1VDD
     {RT5621_STEREO_AD_DA_CLK_CTRL,  0x066d},    //set Dac filter to 256fs
     {RT5621_HID_CTRL_INDEX,         0x46},	    //Class D setting
     {RT5621_HID_CTRL_DATA,          0xFFFF},    //power on Class D Internal register
@@ -1816,6 +1817,8 @@ static int rt5621_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id *
         pr_err("failed to initialise rt5621\n");
 
 	rt5621_dai.ac97_pdata = i2c->dev.platform_data;
+	
+	aml_soc_platform.pcm_pdata = i2c->dev.platform_data;
 
     return ret;
 }

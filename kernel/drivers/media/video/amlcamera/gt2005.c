@@ -60,6 +60,9 @@ static struct early_suspend gt2005_early_suspend;
 #define GT2005_CAMERA_VERSION \
 	KERNEL_VERSION(GT2005_CAMERA_MAJOR_VERSION, GT2005_CAMERA_MINOR_VERSION, GT2005_CAMERA_RELEASE)
 
+unsigned short DGain_shutter,AGain_shutter,DGain_shutterH,DGain_shutterL,AGain_shutterH,AGain_shutterL,shutterH,shutterL,shutter;
+unsigned short UXGA_Cap = 0;
+
 MODULE_DESCRIPTION("gt2005 On Board");
 MODULE_AUTHOR("amlogic-sh");
 MODULE_LICENSE("GPL v2");
@@ -76,6 +79,10 @@ static unsigned int vid_limit = 16;
 
 static int vidio_set_fmt_ticks=0;
 
+extern int disable_gt2005;
+
+static int gt2005_h_active=800;
+static int gt2005_v_active=600;
 
 
 /* supported controls */
@@ -152,6 +159,15 @@ static struct v4l2_queryctrl gt2005_qctrl[] = {
 		.step          = 0x1,
 		.default_value = 0,
 		.flags         = V4L2_CTRL_FLAG_SLIDER,
+	},{
+		.id            = V4L2_CID_WHITENESS,
+		.type          = V4L2_CTRL_TYPE_INTEGER,
+		.name          = "banding",
+		.minimum       = 0,
+		.maximum       = 1,
+		.step          = 0x1,
+		.default_value = 0,
+		.flags         = V4L2_CTRL_FLAG_SLIDER,
 	}
 };
 
@@ -174,21 +190,26 @@ static struct gt2005_fmt formats[] = {
 		.fourcc   = V4L2_PIX_FMT_RGB565X, /* rrrrrggg gggbbbbb */
 		.depth    = 16,
 	},
-	
+
 	{
 		.name     = "RGB888 (24)",
 		.fourcc   = V4L2_PIX_FMT_RGB24, /* 24  RGB-8-8-8 */
 		.depth    = 24,
-	},	
+	},
 	{
 		.name     = "BGR888 (24)",
 		.fourcc   = V4L2_PIX_FMT_BGR24, /* 24  BGR-8-8-8 */
 		.depth    = 24,
-	},		
+	},
 	{
 		.name     = "12  Y/CbCr 4:2:0",
 		.fourcc   = V4L2_PIX_FMT_NV12,
-		.depth    = 12,	
+		.depth    = 12,
+	},
+	{
+		.name     = "12  Y/CbCr 4:2:0",
+		.fourcc   = V4L2_PIX_FMT_NV21,
+		.depth    = 12,
 	},
 	{
 		.name     = "YUV420P",
@@ -199,7 +220,7 @@ static struct gt2005_fmt formats[] = {
 	{
 		.name     = "4:2:2, packed, YUYV",
 		.fourcc   = V4L2_PIX_FMT_VYUY,
-		.depth    = 16,	
+		.depth    = 16,
 	},
 	{
 		.name     = "RGB565 (LE)",
@@ -285,7 +306,7 @@ struct gt2005_device {
 
 	/* platform device data from board initting. */
 	aml_plat_cam_data_t platform_dev_data;
-	
+
 	/* Control 'registers' */
 	int 			   qctl_regs[ARRAY_SIZE(gt2005_qctrl)];
 };
@@ -313,12 +334,23 @@ static inline struct gt2005_fh *to_fh(struct gt2005_device *dev)
 	return container_of(dev, struct gt2005_fh, dev);
 }
 
+static struct v4l2_frmsize_discrete gt2005_prev_resolution[2]=
+{
+	{320,240},
+	{800,600},
+};
+
+static struct v4l2_frmsize_discrete gt2005_pic_resolution[2]=
+{
+	{800,600},
+	{1600,1200},
+};
 
 /* ------------------------------------------------------------------
 	reg spec of GT2005
    ------------------------------------------------------------------*/
 
-struct aml_camera_i2c_fig_s GT2005_script[] = { 
+struct aml_camera_i2c_fig_s GT2005_script[] = {
 #ifdef CONFIG_MACH_MESON_8726M_REFB10
 	{0x0101 , 0x02},
 #else
@@ -336,16 +368,16 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 
 	//Binning&Resoultion
 	{0x0109 , 0x00},
-	{0x010A , 0x04},	
+	{0x010A , 0x04},
 	{0x010B , 0x0F},
 	{0x010C , 0x00},
 	{0x010D , 0x08},
 	{0x010E , 0x00},
 	{0x010F , 0x0A},
-	{0x0110 , 0x03},					
-	{0x0111 , 0x20},					
-	{0x0112 , 0x02},					
-	{0x0113 , 0x5A},
+	{0x0110 , 0x03},
+	{0x0111 , 0x20},
+	{0x0112 , 0x02},
+	{0x0113 , 0x5a},// 5a
 
 	//YUV Mode
 	{0x0114 , 0x06},
@@ -361,11 +393,13 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 	{0x011A , 0x04},
 	{0x011B , 0x00},
 	*/
-	
+
 		//PLL&Frame Rate
-	{0x0116 , 0x01},
+	//{0x0116 , 0x01},
+	{0x0116 , 0x02},
 	{0x0117 , 0x00},
-	{0x0118 , 0x34},
+	//{0x0118 , 0x34},
+	{0x0118 , 0x3c},
 	{0x0119 , 0x01},
 	{0x011A , 0x04},
 	{0x011B , 0x00},
@@ -376,7 +410,7 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 	//Do not change
 	{0x011D , 0x02},
 	{0x011E , 0x00},
-	
+
 	{0x011F , 0x00},
 	{0x0120 , 0x1C},
 	{0x0121 , 0x00},
@@ -392,7 +426,7 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 	{0x0200 , 0x30},
 
 	//Brightness
-	{0x0201 , 0x30}, //0x00 kim   10 
+	{0x0201 , 0x08}, //0x00 kim   10 
 
 	//Saturation
 	{0x0202 , 0x40}, // 0x48   kim   40 
@@ -508,14 +542,14 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 	{0x0269 , 0xA3},
 	{0x026A , 0xB4},
 	{0x026B , 0x90},
-	
+
 	{0x026C , 0x00},
 	{0x026D , 0xD0},
 	{0x026E , 0x60},
 	{0x026F , 0xA0},
 	{0x0270 , 0x40},
 	{0x0300 , 0x81},
-	{0x0301 , 0xA0}, // 0x80  kim
+	{0x0301 , 0x90}, // 0x80  kim
 	{0x0302 , 0x22},
 	{0x0303 , 0x06},
 	{0x0304 , 0x03},
@@ -532,16 +566,16 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 	{0x030F , 0x10},
 	{0x0310 , 0x04},
 	{0x0311 , 0xFF},
+	//{0x0312 , 0x98},// 08
 	{0x0312 , 0x08},
-
 	//Banding Setting{50Hz}
-		{0x0313 , 0x38},
-	{0x0314 , 0xd0},  
+		{0x0313 , 0x35},
+	{0x0314 , 0x16},  // 468
 	//{0x0313 , 0x34},
 	//{0x0314 , 0x3b},
 	{0x0315 , 0x16},
 	{0x0316 , 0x26},
-	
+
 	{0x0317 , 0x02},
 	{0x0318 , 0x08},
 	{0x0319 , 0x0C},
@@ -725,7 +759,7 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 		{0x0408,0x44},
 		{0x0409,0x1F},
 		{0x040A,0x40},
-		{0x040B,0x42},
+		{0x040B,0x61},// 42 
 
 	// huaxin lens
 		{0x040C,0xA0},
@@ -744,16 +778,16 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 		{0x0419,0x05},
 		{0x041A,0x09},
 		{0x041B,0x07},
-		{0x041C,0x09},
-		{0x041D,0x09},
+		{0x041C,0x07},//09
+		{0x041D,0x07},
 		{0x041E,0x05},
 		{0x041F,0x02},
 		{0x0420,0x2D},
 		{0x0421,0x2D},
-		{0x0422,0x31},
+		{0x0422,0x2E},//31
 		{0x0423,0x25},
-		{0x0424,0x2C},
-		{0x0425,0x2C},
+		{0x0424,0x2A},//2c
+		{0x0425,0x2A},
 		{0x0426,0x29},
 		{0x0427,0x27},
 		{0x0428,0x12},
@@ -762,7 +796,7 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 		{0x042B,0x13},
 		{0x042C,0x17},
 		{0x042D,0x17},
-		{0x042E,0x17},
+		{0x042E,0x14},//17
 		{0x042F,0x0F},
 		{0x0430,0x00},
 		{0x0431,0x00},
@@ -782,7 +816,7 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 		{0x043F,0x10},
 // pwb gain		
 		{0x0440,0x00},
-		{0x0441,0x4b},// 19
+		{0x0441,0x48},// 19
 		{0x0442,0x00},
 		{0x0443,0x00},
 		{0x0444,0x51},// 10
@@ -897,7 +931,7 @@ struct aml_camera_i2c_fig_s GT2005_script[] = {
 	
 
 	{0x0686 , 0x6F},
-	
+
 	//Output Enable
 	{0x0100 , 0x01},
 	{0x0102 , 0x02},
@@ -910,10 +944,10 @@ void GT2005_init_regs(struct gt2005_device *dev)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&dev->sd);
     int i=0;
-    
+
     while(1)
     {
-        if (GT2005_script[i].val==0xff&&GT2005_script[i].addr==0xffff) 
+        if (GT2005_script[i].val==0xff&&GT2005_script[i].addr==0xffff)
         {
         	printk("GT2005_write_regs success in initial GT2005.\n");
         	break;
@@ -921,11 +955,29 @@ void GT2005_init_regs(struct gt2005_device *dev)
         if((i2c_put_byte(client,GT2005_script[i].addr, GT2005_script[i].val)) < 0)
         {
         	printk("fail in initial GT2005. \n");
-		break;
+		return;
 		}
 		i++;
     }
-
+    aml_plat_cam_data_t* plat_dat= (aml_plat_cam_data_t*)client->dev.platform_data;
+    if (plat_dat&&plat_dat->custom_init_script) {
+		i=0;
+		aml_camera_i2c_fig_t*  custom_script = (aml_camera_i2c_fig_t*)plat_dat->custom_init_script;
+		while(1)
+		{
+			if (custom_script[i].val==0xff&&custom_script[i].addr==0xffff)
+			{
+				printk("GT2005_write_custom_regs success in initial GT2005.\n");
+				break;
+			}
+			if((i2c_put_byte(client,custom_script[i].addr, custom_script[i].val)) < 0)
+			{
+				printk("fail in initial GT2005 custom_regs. \n");
+				return;
+			}
+			i++;
+		}
+    }
     return;
 }
 /*************************************************************************
@@ -950,7 +1002,7 @@ void GT2005_set_param_wb(struct gt2005_device *dev,enum  camera_wb_flip_e para)/
 
     switch (para)
 	{
-		
+
 		case CAM_WB_AUTO://auto
 			/*i2c_put_byte(client,0x031a , 0x81);
 			i2c_put_byte(client,0x0320 , 0x24);
@@ -967,7 +1019,7 @@ void GT2005_set_param_wb(struct gt2005_device *dev,enum  camera_wb_flip_e para)/
 			i2c_put_byte(client,0x0321 , 0x14);
 			i2c_put_byte(client,0x0322 , 0x1a);
 			i2c_put_byte(client,0x0323 , 0x24);
-			i2c_put_byte(client,0x0441 , 0x4B);
+			i2c_put_byte(client,0x0441 , 0x48);
 			i2c_put_byte(client,0x0442 , 0x00);
 			i2c_put_byte(client,0x0443 , 0x00);
 			i2c_put_byte(client,0x0444 , 0x51);			
@@ -995,7 +1047,7 @@ void GT2005_set_param_wb(struct gt2005_device *dev,enum  camera_wb_flip_e para)/
 			i2c_put_byte(client,0x0444 , 0x14);
 			break;
 
-		case CAM_WB_INCANDESCENCE: 
+		case CAM_WB_INCANDESCENCE:
 			i2c_put_byte(client,0x0320 , 0x02);
 			i2c_put_byte(client,0x0321 , 0x02);
 			i2c_put_byte(client,0x0322 , 0x02);
@@ -1005,8 +1057,8 @@ void GT2005_set_param_wb(struct gt2005_device *dev,enum  camera_wb_flip_e para)/
 			i2c_put_byte(client,0x0443 , 0x00);
 			i2c_put_byte(client,0x0444 , 0x30);
 			break;
-			
-		case CAM_WB_TUNGSTEN: 
+
+		case CAM_WB_TUNGSTEN:
 			i2c_put_byte(client,0x0320 , 0x02);
 			i2c_put_byte(client,0x0321 , 0x02);
 			i2c_put_byte(client,0x0322 , 0x02);
@@ -1032,7 +1084,7 @@ void GT2005_set_param_wb(struct gt2005_device *dev,enum  camera_wb_flip_e para)/
 		    	// TODO
 			break;
 	}
-	
+
 
 } /* GT2005_set_param_wb */
 /*************************************************************************
@@ -1058,65 +1110,264 @@ void GT2005_set_param_exposure(struct gt2005_device *dev,enum camera_exposure_e 
 
     switch (para)
 	{
-		case EXPOSURE_N4_STEP:  
+		/*case EXPOSURE_N4_STEP:
             		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0x55);//40
+			i2c_put_byte(client,0x0301 , 0x85);//40
 			i2c_put_byte(client,0x0201 , 0xd0);
 			break;
-			
+
 		case EXPOSURE_N3_STEP:
             		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0x65);//50
+			i2c_put_byte(client,0x0301 , 0x90);//50
 			i2c_put_byte(client,0x0201 , 0xf0);
 			break;
-			
+
 		case EXPOSURE_N2_STEP:
             		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0x70);
-			i2c_put_byte(client,0x0201 , 0x10);//b0
+			i2c_put_byte(client,0x0301 , 0x98);
+			i2c_put_byte(client,0x0201 , 0x20);//b0
 			break;
-			
+
 		case EXPOSURE_N1_STEP:
             		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0x80);
-			i2c_put_byte(client,0x0201 , 0x20);//d0
+			i2c_put_byte(client,0x0301 , 0xa0);
+			i2c_put_byte(client,0x0201 , 0x55);//d0
 			break;
-			
+
 		case EXPOSURE_0_STEP:
            		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0xa0);
-			i2c_put_byte(client,0x0201 , 0x30);//0c
+			i2c_put_byte(client,0x0301 , 0xc5);
+			i2c_put_byte(client,0x0201 , 0x62);//0c
 			break;
-			
+
 		case EXPOSURE_P1_STEP:
             		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0xa0);
-			i2c_put_byte(client,0x0201 , 0x50);//30
+			i2c_put_byte(client,0x0301 , 0xe0);
+			i2c_put_byte(client,0x0201 , 0x68);//30
 			break;
-			
+
 		case EXPOSURE_P2_STEP:
             		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0xb0);//a0
-			i2c_put_byte(client,0x0201 , 0x55);
+			i2c_put_byte(client,0x0301 , 0xf8);//a0
+			i2c_put_byte(client,0x0201 , 0x70);
 			break;
-			
+
 		case EXPOSURE_P3_STEP:
-            		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0xb0);
-			i2c_put_byte(client,0x0201 , 0x70);//60
+            		i2c_put_byte(client,0x0300 , 0x82);
+			i2c_put_byte(client,0x0301 , 0x30);
+			i2c_put_byte(client,0x0201 , 0x78);//60
 			break;
-			
-		case EXPOSURE_P4_STEP:	
-            		i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0xc5);
-			i2c_put_byte(client,0x0201 , 0x75);
+
+		case EXPOSURE_P4_STEP:
+            		i2c_put_byte(client,0x0300 , 0x83);
+			i2c_put_byte(client,0x0301 , 0xf0);
+			i2c_put_byte(client,0x0201 , 0x7f);
 			break;
-			
+
 		default:
 			i2c_put_byte(client,0x0300 , 0x81);
-			i2c_put_byte(client,0x0301 , 0x80);
-			i2c_put_byte(client,0x0201 , 0x0c);
+			i2c_put_byte(client,0x0301 , 0xa0);
+			i2c_put_byte(client,0x0201 , 0x30);//0c
+			break;*/
+#if 1
+
+				case EXPOSURE_N4_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x80);//40
+					i2c_put_byte(client,0x0201 , 0xa0);
+					break;
+
+
+
+				case EXPOSURE_N3_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x80);//40
+					i2c_put_byte(client,0x0201 , 0xb0);
+					break;
+
+
+				case EXPOSURE_N2_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x90);//40
+					i2c_put_byte(client,0x0201 , 0xd0);
+					break;
+
+
+				case EXPOSURE_N1_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x90);//40
+					i2c_put_byte(client,0x0201 , 0xf0);
+					break;
+					
+				case EXPOSURE_0_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x90);//50
+					i2c_put_byte(client,0x0201 , 0x08);// 10
+					break;
+					
+				case EXPOSURE_P1_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+			i2c_put_byte(client,0x0301 , 0x90);
+					i2c_put_byte(client,0x0201 , 0x20);//b0
+					break;
+					
+				case EXPOSURE_P2_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x98);
+					i2c_put_byte(client,0x0201 , 0x30);//d0
+					break;
+					
+				case EXPOSURE_P3_STEP:
+				    i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0xa0);
+					i2c_put_byte(client,0x0201 , 0x3a);//0c
+					break;
+					
+				case EXPOSURE_P4_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0xa0);
+					i2c_put_byte(client,0x0201 , 0x45);//30
+					break;
+					
+				
+				default:
+							i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x90);//50
+					i2c_put_byte(client,0x0201 , 0x10);
+					break;
+					break;
+
+
+
+
+
+#elif 0
+				case EXPOSURE_N4_STEP:	
+							i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x90);//40
+					i2c_put_byte(client,0x0201 , 0xf0);
+					break;
+					
+				case EXPOSURE_N3_STEP:
+							i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x90);//50
+					i2c_put_byte(client,0x0201 , 0x10);
+					break;
+					
+				case EXPOSURE_N2_STEP:
+							i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x90);
+					i2c_put_byte(client,0x0201 , 0x20);//b0
+					break;
+					
+				case EXPOSURE_N1_STEP:
+							i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0x98);
+					i2c_put_byte(client,0x0201 , 0x30);//d0
 			break;
+
+		case EXPOSURE_0_STEP:
+				i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0xa0);
+					i2c_put_byte(client,0x0201 , 0x3a);//0c
+			break;
+
+		case EXPOSURE_P1_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0xa0);
+					i2c_put_byte(client,0x0201 , 0x45);//30
+			break;
+
+		case EXPOSURE_P2_STEP:
+					i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0xb0);//a0
+					i2c_put_byte(client,0x0201 , 0x50);
+			break;
+
+		case EXPOSURE_P3_STEP:
+					i2c_put_byte(client,0x0300 , 0x82);
+					i2c_put_byte(client,0x0301 , 0xc0);
+					i2c_put_byte(client,0x0201 , 0x58);//60
+			break;
+
+		case EXPOSURE_P4_STEP:
+					i2c_put_byte(client,0x0300 , 0x83);
+					i2c_put_byte(client,0x0301 , 0xe0);
+					i2c_put_byte(client,0x0201 , 0x68);
+			break;
+
+		default:
+				i2c_put_byte(client,0x0300 , 0x81);
+					i2c_put_byte(client,0x0301 , 0xa0);
+					i2c_put_byte(client,0x0201 , 0x3a);//0c
+					break;
+					break;
+#else
+		
+				case EXPOSURE_N4_STEP:	
+									i2c_put_byte(client,0x0300 , 0x81);
+							i2c_put_byte(client,0x0301 , 0x90);//40
+							i2c_put_byte(client,0x0201 , 0xc0);
+							break;
+							
+						case EXPOSURE_N3_STEP:
+									i2c_put_byte(client,0x0300 , 0x81);
+							i2c_put_byte(client,0x0301 , 0x90);//50
+							i2c_put_byte(client,0x0201 , 0xd0);
+							break;
+							
+						case EXPOSURE_N2_STEP:
+									i2c_put_byte(client,0x0300 , 0x81);
+							i2c_put_byte(client,0x0301 , 0x90);
+							i2c_put_byte(client,0x0201 , 0xe0);//b0
+							break;
+							
+						case EXPOSURE_N1_STEP:
+									i2c_put_byte(client,0x0300 , 0x81);
+							i2c_put_byte(client,0x0301 , 0x90);
+							i2c_put_byte(client,0x0201 , 0xf0);//d0
+							break;
+							
+						case EXPOSURE_0_STEP:
+								i2c_put_byte(client,0x0300 , 0x81);
+							i2c_put_byte(client,0x0301 , 0xa0);
+							i2c_put_byte(client,0x0201 , 0x10);//0c
+							break;
+							
+						case EXPOSURE_P1_STEP:
+									i2c_put_byte(client,0x0300 , 0x81);
+							i2c_put_byte(client,0x0301 , 0xa0);
+							i2c_put_byte(client,0x0201 , 0x20);//30
+							break;
+							
+						case EXPOSURE_P2_STEP:
+									i2c_put_byte(client,0x0300 , 0x81);
+							i2c_put_byte(client,0x0301 , 0xb0);//a0
+							i2c_put_byte(client,0x0201 , 0x30);
+							break;
+							
+						case EXPOSURE_P3_STEP:
+									i2c_put_byte(client,0x0300 , 0x82);
+			i2c_put_byte(client,0x0301 , 0xc0);
+							i2c_put_byte(client,0x0201 , 0x40);//60
+			break;
+							
+						case EXPOSURE_P4_STEP:	
+									i2c_put_byte(client,0x0300 , 0x83);
+							i2c_put_byte(client,0x0301 , 0xe0);
+							i2c_put_byte(client,0x0201 , 0x50);
+			break;
+
+						default:
+								i2c_put_byte(client,0x0300 , 0x81);
+							i2c_put_byte(client,0x0301 , 0xa0);
+							i2c_put_byte(client,0x0201 , 0x10);//0c
+			break;
+			break;
+
+
+
+#endif
 	}
 
 
@@ -1141,12 +1392,12 @@ void GT2005_set_param_effect(struct gt2005_device *dev,enum camera_effect_flip_e
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&dev->sd);
 
-  
+
     switch (para)
 	{
 		case CAM_EFFECT_ENC_NORMAL:
 			i2c_put_byte(client,0x0115,0x00);
-			break;		
+			break;
 
 		case CAM_EFFECT_ENC_GRAYSCALE:
 			i2c_put_byte(client,0x0115,0x06);
@@ -1156,26 +1407,33 @@ void GT2005_set_param_effect(struct gt2005_device *dev,enum camera_effect_flip_e
 		     	i2c_put_byte(client,0x0115,0x0a);
 			i2c_put_byte(client,0x026e,0x60);
 			i2c_put_byte(client,0x026f,0xa0);
-			break;		
-				
+			break;
+
 		case CAM_EFFECT_ENC_SEPIAGREEN:
 			i2c_put_byte(client,0x0115,0x0a);
 			i2c_put_byte(client,0x026e,0x20);
 			i2c_put_byte(client,0x026f,0x00);
-			break;					
+			break;
 
 		case CAM_EFFECT_ENC_SEPIABLUE:
 			i2c_put_byte(client,0x0115,0x0a);
 			i2c_put_byte(client,0x026e,0xfb);
 			i2c_put_byte(client,0x026f,0x00);
-			break;								
+			break;
 
 		case CAM_EFFECT_ENC_COLORINV:
 			i2c_put_byte(client,0x0115,0x09);
-			break;		
+			i2c_put_byte(client,0x0301,0x81);
+			i2c_put_byte(client,0x0201,0xc0);
+			i2c_put_byte(client,0x0300,0x85);
+			break;
 
 		default:
 			break;
+	}
+	if(para!=CAM_EFFECT_ENC_COLORINV){
+		GT2005_set_param_exposure(dev,gt2005_qctrl[1].default_value);
+
 	}
 
 
@@ -1211,29 +1469,78 @@ void GT2005_set_night_mode(struct gt2005_device *dev,enum  camera_night_mode_fli
 	}
 
 }    /* GT2005_NightMode */
+void GT2005_set_param_banding(struct gt2005_device *dev,enum  camera_night_mode_flip_e banding)
+{
+    struct i2c_client *client = v4l2_get_subdevdata(&dev->sd);
+	unsigned char buf[4];
+
+	switch(banding)
+		{
+		case CAM_BANDING_50HZ:
+			i2c_put_byte(client,0x0315,0x16);
+			break;
+		case CAM_BANDING_60HZ:
+			i2c_put_byte(client,0x0315,0x56);
+			break;
+
+		}
+
+}
 
 void GT2005_set_resolution(struct gt2005_device *dev,int height,int width)
-{	
-	struct i2c_client *client = v4l2_get_subdevdata(&dev->sd);	
-	
+{
+
+	int ret;
+	struct i2c_client *client = v4l2_get_subdevdata(&dev->sd);
+
+
+	int shutter,AGain_shutter,DGain_shutter;
+
+#if 1	 
 	if(height&&width&&(height<=1200)&&(width<=1600))
 	{		
 	    if((height<=600)&&(width<=800))
 	    {
-	        
-	    	i2c_put_byte(client,0x0110, 0x03);
-			i2c_put_byte(client,0x0111, 0x20);
-			i2c_put_byte(client,0x0112, 0x02);
-			i2c_put_byte(client,0x0113, 0x5A);
-	    }
+	    #if 1
+		i2c_put_byte(client,0x0109 ,  0x00);
+		i2c_put_byte(client,0x010a ,  0x04);
+		i2c_put_byte(client,0x0110, 0x03);
+		i2c_put_byte(client,0x0111, 0x20);
+		i2c_put_byte(client,0x0112, 0x02);
+		i2c_put_byte(client,0x0113, 0x5A);
+
+		    //GT2005_set_param_exposure(dev,gt2005_qctrl[1].default_value);
+
+		gt2005_h_active=800;
+		gt2005_v_active=600;
+			#endif
+			
+		}
 		else
 		{
-			i2c_put_byte(client,0x0110 , (width>>8)&0xff);
-			i2c_put_byte(client,0x0111 ,  width&0xff);
-			i2c_put_byte(client,0x0112 , (height>>8)&0xff);
-			i2c_put_byte(client,0x0113 ,  height&0xff);
+		#if 1
+
+		i2c_put_byte(client,0x0109 ,  0x01);
+			i2c_put_byte(client,0x010A ,  0x00);
+		i2c_put_byte(client,0x0110 , 0x06);
+		i2c_put_byte(client,0x0111 ,  0x40);
+		i2c_put_byte(client,0x0112 , 0x04);
+			i2c_put_byte(client,0x0113 ,  0xb2);
+			#endif
+
+			msleep(10);// 10
+		gt2005_h_active=1600;
+		gt2005_v_active=1200;
+			//printk(KERN_INFO " set camera  GT2005_set_resolution=w=%d,h=%d. \n ",width,height);
+
 		}
 	}
+#else
+		i2c_put_byte(client,0x0110, 0x03);
+		i2c_put_byte(client,0x0111, 0x20);
+			i2c_put_byte(client,0x0112 , 0x02);
+		i2c_put_byte(client,0x0113, 0x5a);// 5a
+		#endif
 }    /* GT2005_set_resolution */
 
 unsigned char v4l_2_gt2005(int val)
@@ -1244,7 +1551,7 @@ unsigned char v4l_2_gt2005(int val)
 	else return 0;
 }
 
-static int gt2005_setting(struct gt2005_device *dev,int PROP_ID,int value ) 
+static int gt2005_setting(struct gt2005_device *dev,int PROP_ID,int value )
 {
 	int ret=0;
 	unsigned char cur_val;
@@ -1256,14 +1563,14 @@ static int gt2005_setting(struct gt2005_device *dev,int PROP_ID,int value )
 		break;
 	case V4L2_CID_CONTRAST:
 		ret=i2c_put_byte(client,0x0200, value);
-		break;	
+		break;
 	case V4L2_CID_SATURATION:
 		ret=i2c_put_byte(client,0x0202, value);
 		break;
-#if 0	
+#if 0
 	case V4L2_CID_EXPOSURE:
 		ret=i2c_put_byte(client,0x0201, value);
-		break;	
+		break;
 #endif
 	case V4L2_CID_HFLIP:    /* set flip on H. */
 		ret=i2c_get_byte(client,0x0101);
@@ -1284,14 +1591,14 @@ static int gt2005_setting(struct gt2005_device *dev,int PROP_ID,int value )
 		if(ret>0) {
 			cur_val=(char)ret;
 			if(value!=0)
-				cur_val=cur_val|0x10;
+				cur_val=cur_val|0x02;
 			else
 				cur_val=cur_val&0xFD;
 			ret=i2c_put_byte(client,0x0101,cur_val);
 		} else {
 			dprintk(dev, 1, "vertical read error\n");
 		}
-		break;	
+		break;
 	case V4L2_CID_DO_WHITE_BALANCE:
         if(gt2005_qctrl[0].default_value!=value){
 			gt2005_qctrl[0].default_value=value;
@@ -1313,12 +1620,19 @@ static int gt2005_setting(struct gt2005_device *dev,int PROP_ID,int value )
 			printk(KERN_INFO " set camera  effect=%d. \n ",value);
         	}
 		break;
+	case V4L2_CID_WHITENESS:
+		 if(gt2005_qctrl[3].default_value!=value){
+			gt2005_qctrl[3].default_value=value;
+			GT2005_set_param_banding(dev,value);
+			printk(KERN_INFO " set camera  banding=%d. \n ",value);
+        	}
+		break;
 	default:
 		ret=-1;
 		break;
 	}
 	return ret;
-	
+
 }
 
 static void power_down_gt2005(struct gt2005_device *dev)
@@ -1341,13 +1655,8 @@ extern   int vm_fill_buffer(struct videobuf_buffer* vb , int v4l2_format , int m
 static void gt2005_fillbuff(struct gt2005_fh *fh, struct gt2005_buffer *buf)
 {
 	struct gt2005_device *dev = fh->dev;
-	int h , pos = 0;
-	int hmax  = buf->vb.height;
-	int wmax  = buf->vb.width;
-	struct timeval ts;
-	char *tmpbuf;
 	void *vbuf = videobuf_to_vmalloc(&buf->vb);
-	dprintk(dev,1,"%s\n", __func__);	
+	dprintk(dev,1,"%s\n", __func__);
 	if (!vbuf)
 		return;
  /*  0x18221223 indicate the memory type is MAGIC_VMAL_MEM*/
@@ -1374,7 +1683,7 @@ static void gt2005_thread_tick(struct gt2005_fh *fh)
 	buf = list_entry(dma_q->active.next,
 			 struct gt2005_buffer, vb.queue);
     dprintk(dev, 1, "%s\n", __func__);
-    dprintk(dev, 1, "list entry get buf is %x\n",buf);
+    dprintk(dev, 1, "list entry get buf is %x\n",(unsigned)buf);
 
 	/* Nobody is waiting on this buffer, return */
 	if (!waitqueue_active(&buf->vb.done))
@@ -1385,11 +1694,13 @@ static void gt2005_thread_tick(struct gt2005_fh *fh)
 	do_gettimeofday(&buf->vb.ts);
 
 	/* Fill buffer */
+	spin_unlock_irqrestore(&dev->slock, flags);
 	gt2005_fillbuff(fh, buf);
 	dprintk(dev, 1, "filled buffer %p\n", buf);
 
 	wake_up(&buf->vb.done);
 	dprintk(dev, 2, "[%p/%d] wakeup\n", buf, buf->vb. i);
+	return;
 unlock:
 	spin_unlock_irqrestore(&dev->slock, flags);
 	return;
@@ -1403,7 +1714,6 @@ static void gt2005_sleep(struct gt2005_fh *fh)
 	struct gt2005_device *dev = fh->dev;
 	struct gt2005_dmaqueue *dma_q = &dev->vidq;
 
-	int timeout;
 	DECLARE_WAITQUEUE(wait, current);
 
 	dprintk(dev, 1, "%s dma_q=0x%08lx\n", __func__,
@@ -1414,11 +1724,11 @@ static void gt2005_sleep(struct gt2005_fh *fh)
 		goto stop_task;
 
 	/* Calculate time to wake up */
-	timeout = msecs_to_jiffies(frames_to_ms(1));
+	//timeout = msecs_to_jiffies(frames_to_ms(1));
 
 	gt2005_thread_tick(fh);
 
-	schedule_timeout_interruptible(timeout);
+	schedule_timeout_interruptible(2);
 
 stop_task:
 	remove_wait_queue(&dma_q->wq, &wait);
@@ -1488,7 +1798,7 @@ buffer_setup(struct videobuf_queue *vq, unsigned int *count, unsigned int *size)
 	struct gt2005_fh  *fh = vq->priv_data;
 	struct gt2005_device *dev  = fh->dev;
     //int bytes = fh->fmt->depth >> 3 ;
-	*size = (fh->width*fh->height*fh->fmt->depth)>>3;	
+	*size = (fh->width*fh->height*fh->fmt->depth)>>3;
 	if (0 == *count)
 		*count = 32;
 
@@ -1516,8 +1826,8 @@ static void free_buffer(struct videobuf_queue *vq, struct gt2005_buffer *buf)
 	buf->vb.state = VIDEOBUF_NEEDS_INIT;
 }
 
-#define norm_maxw() 1024
-#define norm_maxh() 768
+#define norm_maxw() 1920
+#define norm_maxh() 1200
 static int
 buffer_prepare(struct videobuf_queue *vq, struct videobuf_buffer *vb,
 						enum v4l2_field field)
@@ -1775,7 +2085,10 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 		return -EINVAL;
 
     para.port  = TVIN_PORT_CAMERA;
-    para.fmt = TVIN_SIG_FMT_CAMERA_1280X720P_30Hz;
+    para.fmt_info.fmt = TVIN_SIG_FMT_MAX+1;//TVIN_SIG_FMT_MAX+1;;TVIN_SIG_FMT_CAMERA_1280X720P_30Hz
+	para.fmt_info.frame_rate = 236;
+	para.fmt_info.h_active = gt2005_h_active;
+	para.fmt_info.v_active = gt2005_v_active;
 	ret =  videobuf_streamon(&fh->vb_vidq);
 	if(ret == 0){
     start_tvin_service(0,&para);
@@ -1789,6 +2102,7 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 	struct gt2005_fh  *fh = priv;
 
     int ret = 0 ;
+	printk(KERN_INFO " vidioc_streamoff+++ \n ");
 	if (fh->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 	if (i != fh->type)
@@ -1797,6 +2111,38 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 	if(ret == 0 ){
     stop_tvin_service(0);
 	    fh->stream_on        = 0;
+	}
+	return ret;
+}
+
+static int vidioc_enum_framesizes(struct file *file, void *fh,struct v4l2_frmsizeenum *fsize)
+{
+	int ret = 0,i=0;
+	struct gt2005_fmt *fmt = NULL;
+	struct v4l2_frmsize_discrete *frmsize = NULL;
+	for (i = 0; i < ARRAY_SIZE(formats); i++) {
+		if (formats[i].fourcc == fsize->pixel_format){
+			fmt = &formats[i];
+			break;
+		}
+	}
+	if (fmt == NULL)
+		return -EINVAL;
+	if (fmt->fourcc == V4L2_PIX_FMT_NV21){
+		if (fsize->index >= ARRAY_SIZE(gt2005_prev_resolution))
+			return -EINVAL;
+		frmsize = &gt2005_prev_resolution[fsize->index];
+		fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
+		fsize->discrete.width = frmsize->width;
+		fsize->discrete.height = frmsize->height;
+	}
+	else if(fmt->fourcc == V4L2_PIX_FMT_RGB24){
+		if (fsize->index >= ARRAY_SIZE(gt2005_pic_resolution))
+			return -EINVAL;
+		frmsize = &gt2005_pic_resolution[fsize->index];
+		fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
+		fsize->discrete.width = frmsize->width;
+		fsize->discrete.height = frmsize->height;
 	}
 	return ret;
 }
@@ -1948,7 +2294,7 @@ static int gt2005_open(struct file *file)
 	fh->stream_on = 0 ;
 	/* Resets frame counters */
 	dev->jiffies = jiffies;
-			
+
 //    TVIN_SIG_FMT_CAMERA_640X480P_30Hz,
 //    TVIN_SIG_FMT_CAMERA_800X600P_30Hz,
 //    TVIN_SIG_FMT_CAMERA_1024X768P_30Hz, // 190
@@ -2001,7 +2347,7 @@ static int gt2005_close(struct file *file)
 	gt2005_stop_thread(vidq);
 	videobuf_stop(&fh->vb_vidq);
 	if(fh->stream_on){
-	    stop_tvin_service(0);     
+	    stop_tvin_service(0);
 	}
 	videobuf_mmap_free(&fh->vb_vidq);
 
@@ -2013,16 +2359,34 @@ static int gt2005_close(struct file *file)
 
 	dprintk(dev, 1, "close called (dev=%s, users=%d)\n",
 		video_device_node_name(vdev), dev->users);
-#if 1		
+#if 1
+	gt2005_h_active=800;
+	gt2005_v_active=600;
+	gt2005_qctrl[0].default_value=0;
+	gt2005_qctrl[1].default_value=4;
+	gt2005_qctrl[2].default_value=0;
+	gt2005_qctrl[3].default_value=0;
+
+
 	power_down_gt2005(dev);
 #endif
 	msleep(10);
-
-	if(dev->platform_dev_data.device_uninit) {
-		dev->platform_dev_data.device_uninit();
-		printk("+++found a uninit function, and run it..\n");
-	}
-	msleep(10); 
+    if(disable_gt2005>0){
+		disable_gt2005=0;
+		//printk("+++device_disable, and run it..\n");
+		if(dev->platform_dev_data.device_disable) {
+			dev->platform_dev_data.device_disable();
+			printk("+++found a disable function, and run it..\n");
+			}
+		}
+	else{
+		disable_gt2005=0;
+		if(dev->platform_dev_data.device_uninit) {
+			dev->platform_dev_data.device_uninit();
+			printk("+++found a uninit function, and run it..\n");
+			}
+		}
+	msleep(10);
 	return 0;
 }
 
@@ -2073,6 +2437,7 @@ static const struct v4l2_ioctl_ops gt2005_ioctl_ops = {
 	.vidioc_s_ctrl        = vidioc_s_ctrl,
 	.vidioc_streamon      = vidioc_streamon,
 	.vidioc_streamoff     = vidioc_streamoff,
+	.vidioc_enum_framesizes = vidioc_enum_framesizes,
 #ifdef CONFIG_VIDEO_V4L1_COMPAT
 	.vidiocgmbuf          = vidiocgmbuf,
 #endif
@@ -2130,10 +2495,10 @@ static void aml_gt2005_late_resume(struct early_suspend *h)
 static int gt2005_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
-	int pgbuf;
 	int err;
 	struct gt2005_device *t;
 	struct v4l2_subdev *sd;
+	aml_plat_cam_data_t* plat_dat;
 	v4l_info(client, "chip found @ 0x%x (%s)\n",
 			client->addr << 1, client->adapter->name);
 	t = kzalloc(sizeof(*t), GFP_KERNEL);
@@ -2155,10 +2520,11 @@ static int gt2005_probe(struct i2c_client *client,
 	video_set_drvdata(t->vdev, t);
 
 	/* Register it */
-	aml_plat_cam_data_t* plat_dat= (aml_plat_cam_data_t*)client->dev.platform_data;
+	plat_dat= (aml_plat_cam_data_t*)client->dev.platform_data;
 	if (plat_dat) {
 		t->platform_dev_data.device_init=plat_dat->device_init;
 		t->platform_dev_data.device_uninit=plat_dat->device_uninit;
+		t->platform_dev_data.device_disable=plat_dat->device_disable;
 		if(plat_dat->video_nr>=0)  video_nr=plat_dat->video_nr;
 	}
 	err = video_register_device(t->vdev, VFL_TYPE_GRABBER, video_nr);
@@ -2191,10 +2557,10 @@ static int gt2005_remove(struct i2c_client *client)
 	return 0;
 }
 
-static int gt2005_suspend(struct i2c_client *client)
+static int gt2005_suspend(struct i2c_client *client, pm_message_t state)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-	struct gt2005_device *t = to_dev(sd);	
+	struct gt2005_device *t = to_dev(sd);
 	struct gt2005_fh  *fh = to_fh(t);
 	if(fh->stream_on == 1){
 		stop_tvin_service(0);
@@ -2210,11 +2576,11 @@ static int gt2005_resume(struct i2c_client *client)
     struct gt2005_fh  *fh = to_fh(t);
     tvin_parm_t para;
     para.port  = TVIN_PORT_CAMERA;
-    para.fmt = TVIN_SIG_FMT_CAMERA_1280X720P_30Hz;
-    GT2005_init_regs(t); 
+    para.fmt_info.fmt = TVIN_SIG_FMT_CAMERA_1280X720P_30Hz;
+    GT2005_init_regs(t);
 	if(fh->stream_on == 1){
         start_tvin_service(0,&para);
-	}       	
+	}
 	return 0;
 }
 
@@ -2230,6 +2596,7 @@ static struct v4l2_i2c_driver_data v4l2_i2c_data = {
 	.probe = gt2005_probe,
 	.remove = gt2005_remove,
 	.suspend = gt2005_suspend,
-	.resume = gt2005_resume,		
+	.resume = gt2005_resume,
 	.id_table = gt2005_id,
 };
+

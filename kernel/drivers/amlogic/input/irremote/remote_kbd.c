@@ -92,7 +92,7 @@ static  pin_config_t  pin_config[]={
 		},
 } ;
 
-static __u16 key_map[256];
+static __u16 key_map[512];
 static __u16 mouse_map[6]; /*Left Right Up Down + middlewheel up &down*/
 
 int remote_printk(const char *fmt, ...)
@@ -109,8 +109,8 @@ int remote_printk(const char *fmt, ...)
 
 static int kp_mouse_event(struct input_dev *dev, unsigned int scancode, unsigned int type)
 {
-    __u16 mouse_code;
-    __s32 mouse_value;
+    __u16 mouse_code = REL_X;
+    __s32 mouse_value = 0;
     static unsigned int repeat_count = 0;
     __s32 move_accelerate[] = {0, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9};
     unsigned int i;
@@ -204,7 +204,7 @@ void kp_send_key(struct input_dev *dev, unsigned int scancode, unsigned int type
 }
 static void  disable_remote_irq(void)
 {
-	 if(!(gp_kp->work_mode&REMOTE_WORK_MODE_FIQ))
+	if((!(gp_kp->work_mode&&REMOTE_WORK_MODE_FIQ))&&(!(gp_kp->work_mode&&REMOTE_WORK_MODE_FIQ_RCMM)))
 	 {
 	 	disable_irq(NEC_REMOTE_IRQ_NO);
 	 }
@@ -212,7 +212,7 @@ static void  disable_remote_irq(void)
 }
 static void  enable_remote_irq(void)
 {
-	if(!(gp_kp->work_mode&&REMOTE_WORK_MODE_FIQ))
+	if((!(gp_kp->work_mode&&REMOTE_WORK_MODE_FIQ))&&(!(gp_kp->work_mode&&REMOTE_WORK_MODE_FIQ_RCMM)))
 	 {
 	 	enable_irq(NEC_REMOTE_IRQ_NO);
 	 }
@@ -255,7 +255,16 @@ static void kp_repeat_sr(unsigned long data)
 static void kp_timer_sr(unsigned long data)
 {
     struct kp *kp_data=(struct kp *)data;
-    kp_send_key(kp_data->input, (kp_data->cur_keycode>>16)&0xff ,0);
+    if(kp_data->work_mode == REMOTE_WORK_MODE_FIQ_RCMM){
+        if(kp_data->bit_count == 32)
+            kp_send_key(kp_data->input, 0x100|(kp_data->cur_keycode>>(kp_data->bit_count - 8)), 1);    
+        else
+            kp_send_key(kp_data->input, kp_data->cur_keycode>>(kp_data->bit_count - 8), 0);
+	}
+    else if(kp_data->work_mode == REMOTE_WORK_MODE_RC5 || kp_data->work_mode == REMOTE_WORK_MODE_RC6)
+        kp_send_key(kp_data->input, kp_data->cur_keycode, 0);
+    else
+        kp_send_key(kp_data->input, (kp_data->cur_keycode>>16)&0xff ,0);
     if(!(kp_data->work_mode&REMOTE_WORK_MODE_HW))
         kp_data->step   = REMOTE_STATUS_WAIT ;
 }
@@ -268,11 +277,15 @@ static irqreturn_t kp_interrupt(int irq, void *dev_id)
 
 	return IRQ_HANDLED;
 }
-static  irqreturn_t  kp_fiq_interrupt(void)
+static void kp_fiq_interrupt(void)
 {
-	kp_sw_reprot_key((unsigned long)gp_kp);
+    if(gp_kp->work_mode == REMOTE_WORK_MODE_RC6)
+        kp_rc6_reprot_key((unsigned long)gp_kp);
+    else if(gp_kp->work_mode == REMOTE_WORK_MODE_RC5)
+        kp_rc5_reprot_key((unsigned long)gp_kp);    
+    else
+	    kp_sw_reprot_key((unsigned long)gp_kp);
 	WRITE_MPEG_REG(IRQ_CLR_REG(NEC_REMOTE_IRQ_NO), 1 << IRQ_BIT(NEC_REMOTE_IRQ_NO));
-	return IRQ_HANDLED;
 }
 static inline int kp_hw_reprot_key(struct kp *kp_data )
 {
@@ -457,41 +470,45 @@ work_mode_config(unsigned int cur_mode)
 	struct irq_desc *desc = irq_to_desc(NEC_REMOTE_IRQ_NO);	
 
    	if(last_mode == cur_mode) return -1;	
-    	if(cur_mode&REMOTE_WORK_MODE_HW)
-    	{
-      	  	control_value=0xbe40; //ignore  custom code .
-      	  	WRITE_MPEG_REG(IR_DEC_REG1,control_value|IR_CONTROL_HOLD_LAST_KEY);
+   	if(cur_mode & REMOTE_WORK_MODE_HW){
+      	control_value=0xbe40; //ignore  custom code .
+      	WRITE_MPEG_REG(IR_DEC_REG1,control_value|IR_CONTROL_HOLD_LAST_KEY);
     	}
 	else
 	{
 		control_value=0x8578;
         	WRITE_MPEG_REG(IR_DEC_REG1,control_value);
-    	}
-
-    	switch(cur_mode&REMOTE_WORK_MODE_MASK)
-    	{
-    		case REMOTE_WORK_MODE_HW:
+   	}
+   	switch(cur_mode&REMOTE_WORK_MODE_MASK){
+    	case REMOTE_WORK_MODE_HW:
 		case REMOTE_WORK_MODE_SW:
-		if(last_mode==REMOTE_WORK_MODE_FIQ)
-		{
+		if((last_mode==REMOTE_WORK_MODE_FIQ)||(last_mode==REMOTE_WORK_MODE_FIQ_RCMM)){
 			//disable fiq and enable common irq
 			unregister_fiq_bridge_handle(&gp_kp->fiq_handle_item);
-			free_fiq(NEC_REMOTE_IRQ_NO);
+			free_fiq(NEC_REMOTE_IRQ_NO, &kp_fiq_interrupt);
 			request_irq(NEC_REMOTE_IRQ_NO, kp_interrupt,
-        			IRQF_SHARED,"keypad", (void *)kp_interrupt);
-		}
+           			IRQF_SHARED,"keypad", (void *)kp_interrupt);
+		    }
 		break;
 		case REMOTE_WORK_MODE_FIQ:
+		case REMOTE_WORK_MODE_FIQ_RCMM:
+		if((last_mode==REMOTE_WORK_MODE_FIQ)||(last_mode==REMOTE_WORK_MODE_FIQ_RCMM))
+			break;
+        
 		//disable common irq and enable fiq.
 		free_irq(NEC_REMOTE_IRQ_NO,kp_interrupt);
-		gp_kp->fiq_handle_item.handle=remote_bridge_isr;
+        if(cur_mode == REMOTE_WORK_MODE_RC6)
+            gp_kp->fiq_handle_item.handle=remote_rc6_bridge_isr;
+        else if(cur_mode == REMOTE_WORK_MODE_RC5)
+            gp_kp->fiq_handle_item.handle=remote_rc5_bridge_isr;
+        else
+		    gp_kp->fiq_handle_item.handle=remote_bridge_isr;
 		gp_kp->fiq_handle_item.key=(u32)gp_kp;
 		gp_kp->fiq_handle_item.name="remote_bridge";
 		register_fiq_bridge_handle(&gp_kp->fiq_handle_item);
 		//workaround to fix fiq mechanism bug.
 		desc->depth++;
-		request_fiq(NEC_REMOTE_IRQ_NO,(void*)kp_fiq_interrupt);
-		
+		request_fiq(NEC_REMOTE_IRQ_NO, &kp_fiq_interrupt);		
 		break;	
     	} 	
     	last_mode=cur_mode;
@@ -499,7 +516,7 @@ work_mode_config(unsigned int cur_mode)
 	if(cur_mode==REMOTE_TOSHIBA_HW)
 		setup_timer(&gp_kp->repeat_timer,kp_repeat_sr,0);
 	else	
-		del_timer(&gp_kp->repeat_timer) ;
+		del_timer(&gp_kp->repeat_timer);
 	return 0;
 }
 
@@ -563,6 +580,8 @@ remote_config_ioctl(struct inode *inode, struct file *filp,
         break;
         case  REMOTE_IOC_SET_BIT_COUNT:
         copy_from_user(&kp->bit_count,argp,sizeof(long));
+		if(kp->bit_count > 32)
+			kp->bit_count = 32;
         break;
         case  REMOTE_IOC_SET_CUSTOMCODE:
         copy_from_user(&kp->custom_code,argp,sizeof(long));
@@ -604,6 +623,14 @@ remote_config_ioctl(struct inode *inode, struct file *filp,
         case REMOTE_IOC_SET_TW_REPEATE_LEADER:
         kp->time_window[6]=val&0xffff;
         kp->time_window[7]=(val>>16)&0xffff;
+        break;
+        case REMOTE_IOC_SET_TW_BIT2_TIME:
+        kp->time_window[8]=val&0xffff;
+        kp->time_window[9]=(val>>16)&0xffff;
+        break;
+        case REMOTE_IOC_SET_TW_BIT3_TIME:
+        kp->time_window[10]=val&0xffff;
+        kp->time_window[11]=(val>>16)&0xffff;
         break;
         // 2 get  part
         case REMOTE_IOC_GET_REG_BASE_GEN:
@@ -843,12 +870,12 @@ static int kp_remove(struct platform_device *pdev)
     /* unregister everything */
     input_unregister_device(kp->input);
     free_pages((unsigned long)remote_log_buf,REMOTE_LOG_BUF_ORDER);
-        device_remove_file(&pdev->dev, &dev_attr_enable);
+    device_remove_file(&pdev->dev, &dev_attr_enable);
     device_remove_file(&pdev->dev, &dev_attr_log_buffer);
-    if(kp->work_mode & REMOTE_WORK_MODE_FIQ )
+    if((kp->work_mode & REMOTE_WORK_MODE_FIQ)||(kp->work_mode & REMOTE_WORK_MODE_FIQ_RCMM))
     {
-    	free_fiq(NEC_REMOTE_IRQ_NO);
-	free_irq(BRIDGE_IRQ,gp_kp);
+        free_fiq(NEC_REMOTE_IRQ_NO, &kp_fiq_interrupt);
+        free_irq(BRIDGE_IRQ,gp_kp);
     }
     else
     {

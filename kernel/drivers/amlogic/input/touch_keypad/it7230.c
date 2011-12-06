@@ -41,7 +41,9 @@
 
 //#define _DEBUG_IT7230_I2C
 //#define _DEBUG_IT7230_READ_
-#define _DEBUG_IT7230_INIT_
+//#define _DEBUG_IT7230_INIT_
+int it7230_read_reg(unsigned char page, unsigned char addr_byte);
+int it7230_write_reg(unsigned char page, unsigned char addr_byte, unsigned short data_word);
 
 struct it7230 {
     spinlock_t lock;
@@ -62,8 +64,13 @@ struct it7230 {
 };
 
 static struct it7230 *gp_kp = NULL;
+static int work_count=0;
+static int timer_count=0;
+static int int_count=0;
+static int err_count = 0;
+static int low_count=0;
 
-const sInitCapSReg asInitCapSReg[] = {
+const sInitCapSReg asInitCapSReg[] = {  
 { PAGE_1,  CAPS_PCR,        0x0001},
 { PAGE_1,  CAPS_PSR,        0x0001},
 { PAGE_1,  CAPS_PSR,        0x0001},
@@ -73,17 +80,17 @@ const sInitCapSReg asInitCapSReg[] = {
 { PAGE_1,  CAPS_CTR,        0x0000},
 { PAGE_1,  CAPS_CFER,       0x4000},
 { PAGE_1,  CAPS_CRMR,       0x0020},
-{ PAGE_1,  CAPS_PDR,        0x1FFF},
+{ PAGE_1,  CAPS_PDR,        0x1FFF},//default:
 { PAGE_1,  CAPS_DR,         0x0050},
 { PAGE_1,  CAPS_S0CR,       0xC013},
 { PAGE_1,  CAPS_S1CR,       0xC023},
 { PAGE_1,  CAPS_S2CR,       0xC049},
 { PAGE_1,  CAPS_S3CR,       0xC079},
-{ PAGE_1,  CAPS_C1COR,      0x68D8},
-{ PAGE_1,  CAPS_C2COR,      0x68D8},
+{ PAGE_1,  CAPS_C1COR,      0x68D1},//
+{ PAGE_1,  CAPS_C2COR,      0x68D2},//
 { PAGE_1,  CAPS_C3COR,      0x68C0},
-{ PAGE_1,  CAPS_C4COR,      0x68DC},
-{ PAGE_1,  CAPS_C7COR,      0x68DB},
+{ PAGE_1,  CAPS_C4COR,      0x68D3},//
+{ PAGE_1,  CAPS_C7COR,      0x68D1},//
 { PAGE_1,  CAPS_C9COR,      0x68C0},
 { PAGE_1,  CAPS_ICR0,       0xFFBF},
 { PAGE_1,  CAPS_ICR1,       0x0FFB},
@@ -109,19 +116,19 @@ const sInitCapSReg asInitCapSReg[] = {
 { PAGE_1,  CAPS_LEDPR3,     0x0444},
 { PAGE_1,  CAPS_GPIOMSR,    0x009C},
 { PAGE_0,  CAPS_S0DLR,      0x8000},
-{ PAGE_0,  CAPS_S0OHCR,     0x0500},//
+{ PAGE_0,  CAPS_S0OHCR,     0x0600},//
 { PAGE_0,  CAPS_S0OLCR,     0x7000},
 { PAGE_0,  CAPS_S0SR,       0xCC88},
 { PAGE_0,  CAPS_S1DLR,      0x8000},
-{ PAGE_0,  CAPS_S1OHCR,     0x0500},//
+{ PAGE_0,  CAPS_S1OHCR,     0x0600},//
 { PAGE_0,  CAPS_S1OLCR,     0x7000},
 { PAGE_0,  CAPS_S1SR,       0xCC88},
 { PAGE_0,  CAPS_S2DLR,      0x8000},
-{ PAGE_0,  CAPS_S2OHCR,     0x0500},//
+{ PAGE_0,  CAPS_S2OHCR,     0x0600},//
 { PAGE_0,  CAPS_S2OLCR,     0x7000},
 { PAGE_0,  CAPS_S2SR,       0xCC88},
 { PAGE_0,  CAPS_S3DLR,      0x8000},
-{ PAGE_0,  CAPS_S3OHCR,     0x0500},//
+{ PAGE_0,  CAPS_S3OHCR,     0x0600},//
 { PAGE_0,  CAPS_S3OLCR,     0x7000},
 { PAGE_0,  CAPS_S3SR,       0xCC88},
 { PAGE_0,  CAPS_SXCHAIER,   0x0000},
@@ -132,6 +139,96 @@ const sInitCapSReg asInitCapSReg[] = {
 { PAGE_1,  CAPS_PCR,        0x3C06}
 };
 
+/*****************************************
+  initial the IT7230
+***************************************/
+static int it7230_power_on_init(void)
+{
+    int ret = 0;
+    int ret1 = 0;
+    int ret2 = 0;
+    unsigned char temp = 0x00;
+    #ifdef _DEBUG_IT7230_INIT_
+    unsigned short read_buff = 0xaa;
+    #endif
+    while (temp < (sizeof(asInitCapSReg)/sizeof(sInitCapSReg))) {
+
+        #ifdef _DEBUG_IT7230_INIT_
+        printk(KERN_INFO "\n");
+        #endif
+        ret1 = it7230_write_reg(asInitCapSReg[temp].page, asInitCapSReg[temp].reg, asInitCapSReg[temp].value);
+        #ifdef _DEBUG_IT7230_INIT_
+        if (ret1 < 0)
+            printk(KERN_INFO "***Write asInitCapSReg[%d] failed***, ret = %d\n", temp, ret1);
+        else
+            printk(KERN_INFO "Write: asInitCapSReg[%d], .page = %d, .reg = 0x%x, .value = 0x%x\n", temp, asInitCapSReg[temp].page, asInitCapSReg[temp].reg, asInitCapSReg[temp].value);
+        #endif
+        temp++;
+        if ( temp<=4) {
+            msleep(20);//delay 5ms
+        }
+        #ifdef _DEBUG_IT7230_INIT_
+        read_buff = it7230_read_reg(asInitCapSReg[temp-1].page, asInitCapSReg[temp-1].reg);
+        printk(KERN_INFO "Read asInitCapSReg[%d], .page = %d, .reg = 0x%x, .value = 0x%x\n", temp-1, asInitCapSReg[temp-1].page, asInitCapSReg[temp-1].reg, read_buff);
+        printk(KERN_INFO "\n");
+        if (read_buff != asInitCapSReg[temp-1].value)
+            ret1 = it7230_write_reg(asInitCapSReg[temp-1].page, asInitCapSReg[temp-1].reg, asInitCapSReg[temp-1].value);
+        #endif
+    }
+
+    msleep(200);//delay the time is 50 to 200 ms
+
+    ret2 = it7230_write_reg(PAGE_1, CAPS_RTR, 0x05f);//set the cab  time.
+    if( it7230_read_reg(PAGE_1, CAPS_RTR)!=0x05f){
+       ret2 = it7230_write_reg(PAGE_1, CAPS_RTR, 0x05f);//set the cab  time.
+        }
+    #ifdef _DEBUG_IT7230_INIT_
+    if (ret2 < 0)
+        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_RTR, 0x05f) failed*** ret = %d\n", ret2);
+    #endif
+    ret |= ret2;
+    ret = it7230_write_reg(PAGE_1, CAPS_CTR, 0x001f);
+       if( it7230_read_reg(PAGE_1, CAPS_CTR)!=0x01f){
+       ret2 = it7230_write_reg(PAGE_1, CAPS_RTR, 0x01f);//set the cab  time.
+        }
+    #ifdef _DEBUG_IT7230_INIT_
+    if (ret2 < 0)
+        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_CTR, 0x001f) failed ret = %d***\n", ret2);
+    #endif
+    ret |= ret2;
+    ret2 = it7230_write_reg(PAGE_1, CAPS_CFER, 0xC000);
+        if( it7230_read_reg(PAGE_1, CAPS_CFER)!=0xC000){
+       ret2 = it7230_write_reg(PAGE_1, CAPS_CFER, 0xC000);//set the cab  time.
+        }
+    #ifdef _DEBUG_IT7230_INIT_
+    ret2 = it7230_write_reg(PAGE_1, CAPS_CFER, 0xC000);    
+    if (ret2 < 0)
+        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_CFER, 0xC000) failed ret = %d***\n", ret2);
+    #endif
+    ret2 = it7230_write_reg(PAGE_1, CAPS_LEDCMR0, 0x10DD);
+    #ifdef _DEBUG_IT7230_INIT_
+    if (ret2 < 0)
+        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_LEDCMR0, 0x10DD) failed ret = %d***\n", ret2);
+    #endif
+    ret2 = it7230_write_reg(PAGE_1, CAPS_LEDCMR1, 0x3DD2);
+    #ifdef _DEBUG_IT7230_INIT_
+    if (ret2 < 0)
+        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_LEDCMR1, 0x3DD2) failed ret = %d***\n", ret2);
+    #endif
+    ret |= ret2;
+    ret1 = it7230_read_reg(PAGE_0, CAPS_SIR);//to clear contact interrupts if any.
+    #ifdef _DEBUG_IT7230_INIT_
+    printk(KERN_INFO "***it7230_read_reg(PAGE_0, CAPS_SIR) = 0x%x\n", ret2);
+    #endif
+    ret2 = it7230_write_reg(PAGE_0, CAPS_SXCHAIER, 0x000f);//set the any key to have interrupts(contact high)
+            if( it7230_read_reg(PAGE_1, CAPS_SXCHAIER)!=0x000f){
+       ret2 = it7230_write_reg(PAGE_1, CAPS_SXCHAIER, 0x000f);//set the cab  time.
+        }
+    ret |= ret2;
+    return ret;
+}
+
+
 /******************************************
 check page and caps read write function
 *******************************************/
@@ -139,6 +236,7 @@ unsigned char current_page = 0;
 int it7230_read_reg(unsigned char page, unsigned char addr_byte)
 {
     int ret = -1;
+    static int count = 0;
     struct i2c_client *client = gp_kp->client;
     u8 check_page_buf[3] = {CAPS_PSR, page, 0};
     u8 buf_reg[2] = { addr_byte, 0};
@@ -169,12 +267,29 @@ int it7230_read_reg(unsigned char page, unsigned char addr_byte)
     #endif
     if (page != current_page ) {
         ret = i2c_transfer(client->adapter, &msg[0], 1);
+        if (ret != 1) {
+    			printk( "it7230 read(1) failed, address = 0x%x\n", addr_byte);
+        	return -1;
+       	}
         current_page = page;
         msleep(10);
     }
     ret = i2c_transfer(client->adapter, &msg[1], 2);
-    if (ret >= 0) {
+    if (ret == 2) {
         ret = (buf[1] << 8) | buf[0];
+    }
+    else{
+    		printk( "it7230 read(2) failed, address = 0x%x\n", addr_byte);
+    		return -1;
+        count ++;
+        if(count < 10){ 
+            printk("count = %d\n", count++);    
+        }
+        else{
+            printk("power on init the it7230!\n");
+            count = 0;
+            it7230_power_on_init();  
+        }
     }
     return ret;
 }
@@ -216,81 +331,61 @@ int it7230_write_reg(unsigned char page, unsigned char addr_byte, unsigned short
         current_page = 0;
     return ret;
 }
-/*****************************************
-  initial the IT7230
-***************************************/
-static int it7230_power_on_init(void)
+
+
+
+static ssize_t it7230_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-    int ret = 0;
-    int ret1 = 0;
-    int ret2 = 0;
-    unsigned char temp = 0x00;
-    #ifdef _DEBUG_IT7230_INIT_
-    unsigned short read_buff = 0xaa;
-    #endif
+	  struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+    u16 reg_addr, reg_data;
+   
+		printk("echo %s: buf[0]=%x\n", attr->attr.name, buf[0]);
+    if (!strcmp(attr->attr.name, "reg")) {
+			sscanf(buf+2, "%x", &reg_addr);
+			sscanf(buf+9, "%x", &reg_data);
+			if (buf[0]== 'w') {
+				printk("write register(0x%x)= 0x%x\n",reg_addr, reg_data);
+				it7230_write_reg(reg_addr>>8, reg_addr&0xff, reg_data);
+			}
+			else if (buf[0]== 'r') {
+				reg_data = it7230_read_reg(reg_addr>>8, reg_addr&0xff);
+				printk(KERN_ALERT"read register(0x%x)= 0x%x\n",reg_addr, reg_data);
+			}
+ 		}
 
-    while (temp < (sizeof(asInitCapSReg)/sizeof(sInitCapSReg))) {
-        #ifdef _DEBUG_IT7230_INIT_
-        printk(KERN_INFO "\n");
-        #endif
-        ret1 = it7230_write_reg(asInitCapSReg[temp].page, asInitCapSReg[temp].reg, asInitCapSReg[temp].value);
-        #ifdef _DEBUG_IT7230_INIT_
-        if (ret1 < 0)
-            printk(KERN_INFO "***Write asInitCapSReg[%d] failed***, ret = %d\n", temp, ret1);
-        else
-            printk(KERN_INFO "Write: asInitCapSReg[%d], .page = %d, .reg = 0x%x, .value = 0x%x\n", temp, asInitCapSReg[temp].page, asInitCapSReg[temp].reg, asInitCapSReg[temp].value);
-        #endif
-        temp++;
-        if ( temp<=4) {
-            msleep(5);//delay 5ms
-        }
-        #ifdef _DEBUG_IT7230_INIT_
-        read_buff = it7230_read_reg(asInitCapSReg[temp-1].page, asInitCapSReg[temp-1].reg);
-        printk(KERN_INFO "Read asInitCapSReg[%d], .page = %d, .reg = 0x%x, .value = 0x%x\n", temp-1, asInitCapSReg[temp-1].page, asInitCapSReg[temp-1].reg, read_buff);
-        printk(KERN_INFO "\n");
-        if (read_buff != asInitCapSReg[temp-1].value)
-            ret1 = it7230_write_reg(asInitCapSReg[temp-1].page, asInitCapSReg[temp-1].reg, asInitCapSReg[temp-1].value);
-        #endif
-    }
+    if (!strcmp(attr->attr.name, "state")) {
+    	printk("interrupt count = %d\n", int_count);
+    	printk("timer count = %d\n", timer_count);
+    	printk("work count = %d\n", work_count);
+    	printk("gpioA3 mode=%d(0=output, 1=input)\n", get_gpio_mode(GPIOA_bank_bit0_14(3), GPIOA_bit_bit0_14(3)));
+    	printk("gpioA3 value=%d(0=low, 1=high)\n", get_gpio_val(GPIOA_bank_bit0_14(3), GPIOA_bit_bit0_14(3)));
+ 		}
 
-    msleep(200);//delay the time is 50 to 200 ms
-
-    ret2 = it7230_write_reg(PAGE_1, CAPS_RTR, 0x05f);//set the cab  time.
-    #ifdef _DEBUG_IT7230_INIT_
-    if (ret2 < 0)
-        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_RTR, 0x05f) failed*** ret = %d\n", ret2);
-    #endif
-    ret |= ret2;
-    ret = it7230_write_reg(PAGE_1, CAPS_CTR, 0x001f);
-    #ifdef _DEBUG_IT7230_INIT_
-    if (ret2 < 0)
-        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_CTR, 0x001f) failed ret = %d***\n", ret2);
-    #endif
-    ret |= ret2;
-    #ifdef _DEBUG_IT7230_INIT_
-    ret2 = it7230_write_reg(PAGE_1, CAPS_CFER, 0xC000);
-    if (ret2 < 0)
-        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_CFER, 0xC000) failed ret = %d***\n", ret2);
-    #endif
-    ret2 = it7230_write_reg(PAGE_1, CAPS_LEDCMR0, 0x10DD);
-    #ifdef _DEBUG_IT7230_INIT_
-    if (ret2 < 0)
-        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_LEDCMR0, 0x10DD) failed ret = %d***\n", ret2);
-    #endif
-    ret2 = it7230_write_reg(PAGE_1, CAPS_LEDCMR1, 0x3DD2);
-    #ifdef _DEBUG_IT7230_INIT_
-    if (ret2 < 0)
-        printk(KERN_INFO "***it7230_write_reg(PAGE_1, CAPS_LEDCMR1, 0x3DD2) failed ret = %d***\n", ret2);
-    #endif
-    ret |= ret2;
-    ret1 = it7230_read_reg(PAGE_0, CAPS_SIR);//to clear contact interrupts if any.
-    #ifdef _DEBUG_IT7230_INIT_
-    printk(KERN_INFO "***it7230_read_reg(PAGE_0, CAPS_SIR) = 0x%x\n", ret2);
-    #endif
-    ret2 = it7230_write_reg(PAGE_0, CAPS_SXCHAIER, 0x000f);//set the any key to have interrupts(contact high)
-    ret |= ret2;
-    return ret;
+    if (!strcmp(attr->attr.name, "init")) {
+    	printk("it7230 initialize echo\n");
+    	it7230_power_on_init();  
+ 		}
+		
+		return 1;
 }
+
+static DEVICE_ATTR(reg, S_IRWXUGO, 0, it7230_write);
+static DEVICE_ATTR(state, S_IRWXUGO, 0, it7230_write);
+static DEVICE_ATTR(init, S_IRWXUGO, 0, it7230_write);
+
+static struct attribute *it7230_attr[] = {
+    &dev_attr_reg.attr,
+    &dev_attr_state.attr,
+    &dev_attr_init.attr,
+    NULL
+};
+
+static struct attribute_group it7230_attr_group = {
+    .name = NULL,
+    .attrs = it7230_attr,
+};
+
+
 
 /*
 static int it7230_reset(void)
@@ -315,20 +410,36 @@ static void it7230_work(struct work_struct *work)
     struct cap_key *key;
 
     kp = (struct it7230 *)container_of(work, struct it7230, work);
-    
+	//*************************************************************
+    work_count++;
+	//***************************************************************
     if ((!kp->get_irq_level()) || (kp->pending_keys)) 
     {
+    		if (!kp->get_irq_level()) {
+    			if (++low_count > 30) {
+    				low_count = 0;
+    				it7230_power_on_init();
+    				printk("interrupt pin low time more than 300ms\n");
+    				goto restart;
+    			}
+    		}
         button_val = it7230_read_reg(PAGE_0, CAPS_SXCHSR);
-        if (button_val >> 5){ //note, just use 5 keys currently, if you have more key define, you need change this value.
+        if ((button_val >> 4) || (button_val < 0)){ //note, just use 5 keys currently, if you have more key define, you need change this value.
             #ifdef _DEBUG_IT7230_READ_
             printk(KERN_INFO "Error! Invalid touch key 0x%04x!\n", button_val);
             #endif
             kp->pending_keys = 0;
+            if (++err_count > 50) {
+	    				err_count = 0;
+	    				it7230_power_on_init();
+	    				printk("error data more than 50\n");    	
+            }
             goto restart;
         }
         #ifdef _DEBUG_IT7230_READ_
         printk(KERN_INFO "button_val = 0x%04x\n", button_val);
         #endif
+        err_count = 0;
         key = kp->key;
         for (i = 0; i < kp->key_num; i++) {
             if (button_val & key->mask) {
@@ -354,6 +465,7 @@ restart:
     }
     else
     {
+    	  low_count = 0;
         enable_irq(kp->client->irq);
     }
 }
@@ -406,7 +518,8 @@ static enum hrtimer_restart it7230_timer(struct hrtimer *timer)
 {
     struct it7230 *kp = (struct it7230*)container_of(timer, struct it7230, timer);
     unsigned long flags = 0;
-    
+
+    timer_count++;
     spin_lock_irqsave(&kp->lock, flags);
     queue_work(kp->workqueue, &kp->work);
     spin_unlock_irqrestore(&kp->lock, flags);
@@ -417,10 +530,12 @@ static irqreturn_t it7230_interrupt(int irq, void *context)
 {
     struct it7230 *kp = (struct it7230 *)context;
     unsigned long flags;
-    
+
+    int_count++;
     spin_lock_irqsave(&kp->lock, flags);
     /* if the attn low or data not clear, disable IRQ and start timer chain */
-    if ((!kp->get_irq_level()) || (kp->pending_keys)) {
+//    if ((!kp->get_irq_level()) || (kp->pending_keys)) {
+    if (!kp->get_irq_level()) {
         disable_irq_nosync(kp->client->irq);
         hrtimer_start(&kp->timer, ktime_set(0, KP_POLL_DELAY), HRTIMER_MODE_REL);
     }
@@ -500,8 +615,9 @@ static int it7230_probe(struct i2c_client *client, const struct i2c_device_id *i
        err = -1;
        goto fail_irq;
     }
-
+    if(it7230_read_reg(PAGE_1, CAPS_PCR)!=0x3C06){
     err = it7230_power_on_init();
+        }
     if (err < 0)
         printk(KERN_INFO "it7230 regs init failed\n");
     else
@@ -534,6 +650,9 @@ static int it7230_probe(struct i2c_client *client, const struct i2c_device_id *i
 
     i2c_set_clientdata(client, kp);
     it7230_register_device(gp_kp);
+
+	struct device *dev = &client->dev;
+	sysfs_create_group(&dev->kobj, &it7230_attr_group);
 
     return 0;
 
@@ -594,7 +713,7 @@ static void __exit it7230_exit(void)
     i2c_del_driver(&it7230_driver);
 }
 
-module_init(it7230_init);
+late_initcall(it7230_init);
 module_exit(it7230_exit);
 
 MODULE_AUTHOR("");

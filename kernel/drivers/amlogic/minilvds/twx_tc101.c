@@ -176,7 +176,13 @@ static struct i2c_driver twx_tc101_i2c_driver = {
     },
 };
 
+static void power_on_backlight(void)
+{            
+    //BL_PWM -> GPIOA_7: 1 (E1)
+    set_gpio_val(GPIOA_bank_bit(7), GPIOA_bit_bit0_14(7), 1);
+    set_gpio_mode(GPIOA_bank_bit(7), GPIOA_bit_bit0_14(7), GPIO_OUTPUT_MODE); 
 
+}
 static int twx_tc101_probe(struct platform_device *pdev){
     int res;
 	
@@ -201,7 +207,7 @@ static int twx_tc101_probe(struct platform_device *pdev){
 	early_suspend.param = pdev;
 	register_early_suspend(&early_suspend);
 #endif
-
+	power_on_backlight();
     return res;
 }
 
@@ -274,6 +280,27 @@ static int twx_tc101_resume(struct platform_device * pdev)
       }
   }
   
+	return res;
+}
+
+int twx_tc101_reinit(void)
+{
+	int res = 0;
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	if (early_suspend_flag)
+		return 0;
+#endif
+
+  if (twx_tc101_client)
+  {
+			twx_tc101_send(0xf830, 0xb2);msleep(10);//
+			twx_tc101_send(0xf831, 0xf0);msleep(10);//
+			twx_tc101_send(0xf833, 0xc2);msleep(10);//
+			twx_tc101_send(0xf840, 0x80);msleep(10);//
+			twx_tc101_send(0xf881, 0xec);msleep(10);//
+      res = 0;
+  }
 	return res;
 }
 

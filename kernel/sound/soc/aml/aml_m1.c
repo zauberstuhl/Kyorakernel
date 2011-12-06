@@ -21,45 +21,53 @@
 #include "aml_pcm.h"
 #include "aml_m1_codec.h"
 
-
-static int aml_m1_hw_params(struct snd_pcm_substream *substream,
-	struct snd_pcm_hw_params *params)
-{
-		struct snd_soc_pcm_runtime *rtd = substream->private_data;
-		struct snd_soc_dai *codec_dai = rtd->dai->codec_dai;
-		struct snd_soc_dai *cpu_dai = rtd->dai->cpu_dai;
-		int ret;
-		// TODO
-printk("***Entered %s:%s\n", __FILE__,__func__);
-		
-		ret = snd_soc_dai_set_fmt(codec_dai, SND_SOC_DAIFMT_I2S|SND_SOC_DAIFMT_NB_NF|SND_SOC_DAIFMT_CBS_CFS);
-		if(ret<0)
-			return ret;
-			
-		ret = snd_soc_dai_set_fmt(cpu_dai, SND_SOC_DAIFMT_I2S|SND_SOC_DAIFMT_NB_NF|SND_SOC_DAIFMT_CBS_CFS);
-		if(ret<0)
-			return ret;
-		
-	return 0;
-}
 	
-static struct snd_soc_ops aml_m1_ops = {
-	.hw_params = aml_m1_hw_params,
-};
-
 static int aml_m1_set_bias_level(struct snd_soc_card *card,
 					enum snd_soc_bias_level level)
 {
 	int ret = 0;
-	// TODO
-printk("***Entered %s:%s\n", __FILE__,__func__);
+    //struct snd_soc_codec *codec = card->codec;
+    switch(level){
+      case SND_SOC_BIAS_ON:
+      case SND_SOC_BIAS_PREPARE:
+        break;
+      case SND_SOC_BIAS_OFF:
+      case SND_SOC_BIAS_STANDBY:
+        break;
+    }
 	return ret;
 }
 
+static const struct snd_soc_dapm_widget aml_m1_dapm_widgets[] = {
+    SND_SOC_DAPM_SPK("Ext Spk", NULL),
+    SND_SOC_DAPM_LINE("HP", NULL),
+};
+
+static const struct snd_soc_dapm_route intercon[] = {
+    {"Ext Spk", NULL, "LINEOUTL"},
+    {"Ext Spk", NULL, "LINEOUTR"},
+    {"HP", NULL, "HP_L"},
+    {"HP", NULL, "HP_R"},
+};
+
 static int aml_m1_codec_init(struct snd_soc_codec *codec)
 {
-printk("***Entered %s:%s\n", __FILE__,__func__);
-		return 0;
+    struct snd_soc_card *card = codec->socdev->card;
+    int err;
+    err = snd_soc_dapm_new_controls(codec, aml_m1_dapm_widgets, ARRAY_SIZE(aml_m1_dapm_widgets));
+    if(err){
+      dev_warn(card->dev, "Failed to register DAPM widgets\n");
+      return 0;
+    }
+    err = snd_soc_dapm_add_routes(codec, intercon, ARRAY_SIZE(intercon));
+    if(err){
+      dev_warn(card->dev, "Failed to setup dapm widgets routine\n");
+      return 0;
+    }
+    snd_soc_dapm_enable_pin(codec, "Ext Spk");
+    snd_soc_dapm_enable_pin(codec, "HP");
+    snd_soc_dapm_sync(codec);
+	return 0;
 }
 
 
@@ -69,7 +77,6 @@ static struct snd_soc_dai_link aml_m1_dai = {
 	.cpu_dai = &aml_dai[0],  //////
 	.codec_dai = &aml_m1_codec_dai,
 	.init = aml_m1_codec_init,
-	.ops = &aml_m1_ops,
 };
 
 static struct snd_soc_card snd_soc_aml_m1 = {
@@ -91,9 +98,6 @@ static struct platform_device *aml_m1_platform_device;
 static int aml_m1_audio_probe(struct platform_device *pdev)
 {
 		int ret;
-		//pdev->dev.platform_data;
-		// TODO
-printk("***Entered %s:%s\n", __FILE__,__func__);
 		aml_m1_snd_device = platform_device_alloc("soc-audio", -1);
 		if (!aml_m1_snd_device) {
 			printk(KERN_ERR "ASoC: Platform device allocation failed\n");

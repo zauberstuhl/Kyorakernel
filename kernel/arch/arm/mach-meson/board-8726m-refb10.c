@@ -94,6 +94,9 @@
 #ifdef CONFIG_SND_AML_M1_MID_WM8900
 #include <sound/wm8900.h>
 #endif
+#ifdef CONFIG_SND_AML_M1_MID_CS42L52
+#include <sound/cs42l52.h>
+#endif
 
 #ifdef CONFIG_GOODIX_CAPACITIVE_TOUCHSCREEN
 #include <linux/goodix_touch.h>
@@ -672,12 +675,34 @@ static struct resource aml_m1_audio_resource[]={
 };
 
 static struct platform_device aml_audio={
-        .name               = "aml_m1_audio_wm8900",
-        .id                     = -1,
-        .resource       =   aml_m1_audio_resource,
-        .num_resources  =   ARRAY_SIZE(aml_m1_audio_resource),
+#ifdef CONFIG_SND_AML_M1_MID_WM8900
+		.name 				= "aml_m1_audio_wm8900",
+#elif defined CONFIG_SND_AML_M1_MID_CS42L52
+        .name 				= "aml_m1_audio_cs42l52",
+#endif
+		.id 					= -1,
+		.resource 		=	aml_m1_audio_resource,
+		.num_resources	=	ARRAY_SIZE(aml_m1_audio_resource),
 };
+#ifdef CONFIG_SND_AML_M1_MID_CS42L52
+static int cs42l52_pwr_rst(void)
+{
+    //reset
+    set_gpio_val(GPIOE_bank_bit16_21(21), GPIOE_bank_bit16_21(21), 0); //low
+    set_gpio_mode(GPIOE_bank_bit16_21(21), GPIOE_bank_bit16_21(21), GPIO_OUTPUT_MODE);
 
+    udelay(20); //delay 2us
+
+    set_gpio_val(GPIOE_bank_bit16_21(21), GPIOE_bank_bit16_21(21), 1); //high
+    set_gpio_mode(GPIOE_bank_bit16_21(21), GPIOE_bank_bit16_21(21), GPIO_OUTPUT_MODE);
+    //end
+
+    return 0;
+}
+static struct cs42l52_platform_data cs42l52_pdata = {
+    .cs42l52_pwr_rst = &cs42l52_pwr_rst,
+};
+#endif
 #ifdef CONFIG_SND_AML_M1_MID_WM8900
 
 //use LED_CS1 as hp detect pin
@@ -715,21 +740,18 @@ int wm8900_is_hp_pluged(void)
                                 (0 << 10)   |       // test
                                 (7 << 7)    |       // CS0 REF, Voltage FeedBack: about 0.505V
                                 (7 << 4)    |       // CS1 REF, Current FeedBack: about 0.505V
-                                (0 << 0));           // DIMCTL Analog dimmer
+                                READ_CBUS_REG(LED_PWM_REG0)&0x0f);           // DIMCTL Analog dimmer
     cs_no = READ_CBUS_REG(LED_PWM_REG3);
         if(cs_no &(1<<14))
           level |= (1<<0);
     
-    // temp patch to mute speaker when hdmi output
-    if(level == 0)
-    	if(get_display_mode() != 0)	
-    			return 1;
-    			
-    //printk("level = %d,board_ver = %d\n",level,board_ver);
+     // temp patch to mute speaker when hdmi output
+    if(level == 1)
+     if(get_display_mode() != 0) {
+    	return 1;
+     	}
+
     return (level == 1)?(0):(1); //return 1: hp pluged, 0: hp unpluged.
-    /*if(cs_no &(1<<15))
-      level |= (1<<0);
-    return (level == 0)?(1):(0); //return 1: hp pluged, 0: hp unpluged.*/
 }
 
 static struct wm8900_platform_data wm8900_pdata = {
@@ -995,6 +1017,25 @@ static struct eeti_platform_data eeti_pdata = {
 };
 #endif
 
+
+#ifdef CONFIG_PIXCIR_CAPACITIVE_TOUCHSCREEN
+#include <linux/i2c/pixcir_i2c_ts.h>
+static struct pixcir_i2c_ts_platform_data pixcir_pdata = {
+	.gpio_shutdown = (GPIOD_bank_bit2_24(23)<<16) | GPIOD_bit_bit2_24(23),
+	.gpio_irq = (GPIOD_bank_bit2_24(24)<<16) | GPIOD_bit_bit2_24(24),
+	.xmin = 0,
+	.xmax = 1280,
+	.ymin = 0,
+	.ymax = 768,
+  .swap_xy = 0,
+  .xpol = 0,
+  .ypol = 0,
+  .point_id_available = 0,	
+};
+#endif
+
+
+
 #ifdef CONFIG_ANDROID_PMEM
 static struct android_pmem_platform_data pmem_data =
 {
@@ -1081,7 +1122,7 @@ static gpio_data_t gpio_data[MAX_GPIO] = {
 	{"GPIOD_18 -- UART_CTS_N",   GPIOD_bank_bit2_24(18),    GPIOD_bit_bit2_24(18),  GPIO_OUTPUT_MODE, 1, 1},
 	{"GPIOD_20 -- LCD_POWER_EN", GPIOD_bank_bit2_24(20),    GPIOD_bit_bit2_24(20),  GPIO_OUTPUT_MODE, 1, 1},
 	{"GPIOD_21 -- UART_TX",      GPIOD_bank_bit2_24(21),    GPIOD_bit_bit2_24(21),  GPIO_OUTPUT_MODE, 1, 1},
-	{"GPIOD_23 -- CAP_TAP_EN",   GPIOD_bank_bit2_24(23),    GPIOD_bit_bit2_24(23),  GPIO_OUTPUT_MODE, 1, 1},
+	//{"GPIOD_23 -- CAP_TAP_EN",   GPIOD_bank_bit2_24(23),    GPIOD_bit_bit2_24(23),  GPIO_OUTPUT_MODE, 1, 1},
   // 5
 	{"GPIOE_4 -- NAND_nCS1",	 GPIOE_bank_bit0_15(4),	    GPIOE_bit_bit0_15(4),	GPIO_OUTPUT_MODE, 1, 1},
 	{"GPIOE_5 -- NAND_nCS2",	 GPIOE_bank_bit0_15(5),	    GPIOE_bit_bit0_15(5),	GPIO_OUTPUT_MODE, 1, 1},
@@ -1089,7 +1130,7 @@ static gpio_data_t gpio_data[MAX_GPIO] = {
 	{"GPIOE_17 -- nand_ncs4",	 GPIOE_bank_bit16_21(17),	GPIOE_bit_bit16_21(17),	GPIO_OUTPUT_MODE, 1, 1},
 	{"GPIOE_18 -- Linux_TX",	 GPIOE_bank_bit16_21(18),	GPIOE_bit_bit16_21(18), GPIO_OUTPUT_MODE, 1, 1},
 	//1
-	//{"TEST_N -- I2S_DOUT",		 GPIOJTAG_bank_bit(16),		GPIOJTAG_bit_bit16(16),	GPIO_OUTPUT_MODE, 1, 1},
+	{"TEST_N -- I2S_DOUT",		 GPIOJTAG_bank_bit(16),		GPIOJTAG_bit_bit16(16),	GPIO_OUTPUT_MODE, 1, 1},
 
 };	
 
@@ -1177,7 +1218,13 @@ static void set_vccx2(int power_on)
         }
         restore_pinmux();
         set_gpio_val(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), 1);
-        set_gpio_mode(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), GPIO_OUTPUT_MODE);        
+        set_gpio_mode(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), GPIO_OUTPUT_MODE); 
+        //camera power on
+        set_gpio_val(GPIOD_bank_bit2_24(5), GPIOD_bit_bit2_24(5), 0); 
+        set_gpio_mode(GPIOD_bank_bit2_24(5), GPIOD_bit_bit2_24(5), GPIO_OUTPUT_MODE); 
+        //touch enable
+        set_gpio_val(GPIOD_bank_bit2_24(23), GPIOD_bit_bit2_24(23), 0); 
+        set_gpio_mode(GPIOD_bank_bit2_24(23), GPIOD_bit_bit2_24(23), GPIO_OUTPUT_MODE);      
         //set clk for wifi
         SET_CBUS_REG_MASK(PERIPHS_PIN_MUX_8, (1<<18));
         CLEAR_CBUS_REG_MASK(PREG_EGPIO_EN_N, (1<<4));	              
@@ -1187,17 +1234,21 @@ static void set_vccx2(int power_on)
         
         set_gpio_val(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), 0);
         set_gpio_mode(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), GPIO_OUTPUT_MODE);   
-        
-        for (i=0;i<MAX_GPIO;i++){
-        	save_gpio(i);
-        }   
-        save_pinmux();  
-        set_gpio_val(GPIOD_bank_bit2_24(5), GPIOD_bit_bit2_24(5), 1); //camera power down
+        //camera power down
+        set_gpio_val(GPIOD_bank_bit2_24(5), GPIOD_bit_bit2_24(5), 1); 
         set_gpio_mode(GPIOD_bank_bit2_24(5), GPIOD_bit_bit2_24(5), GPIO_OUTPUT_MODE);
-        
+        //touch disable
+	      set_gpio_val(GPIOD_bank_bit2_24(23), GPIOD_bit_bit2_24(23), 1); 
+        set_gpio_mode(GPIOD_bank_bit2_24(23), GPIOD_bit_bit2_24(23), GPIO_OUTPUT_MODE);
         //disable wifi clk
         CLEAR_CBUS_REG_MASK(PERIPHS_PIN_MUX_8, (1<<18));
-        SET_CBUS_REG_MASK(PREG_EGPIO_EN_N, (1<<4));	        
+        SET_CBUS_REG_MASK(PREG_EGPIO_EN_N, (1<<4));
+        
+        
+        save_pinmux();  
+        for (i=0;i<MAX_GPIO;i++){
+        	save_gpio(i);
+        }   	        
     }
 }
 static struct meson_pm_config aml_pm_pdata = {
@@ -1208,7 +1259,7 @@ static struct meson_pm_config aml_pm_pdata = {
     .ddr_clk = 0x00110820,
     .sleepcount = 128,
     .set_vccx2 = set_vccx2,
-    .core_voltage_adjust = 10,
+    .core_voltage_adjust = 6,
 };
 
 static struct platform_device aml_pm_device = {
@@ -1255,7 +1306,7 @@ static struct aml_i2c_platform aml_i2c_plat = {
     .wait_xfer_interval = 5,
     .master_no      = AML_I2C_MASTER_B,
     .use_pio            = 0,
-    .master_i2c_speed   = AML_I2C_SPPED_100K,
+    .master_i2c_speed   = AML_I2C_SPPED_300K,
 
     .master_b_pinmux = {
         .scl_reg    = MESON_I2C_MASTER_B_GPIOB_0_REG,
@@ -1357,6 +1408,9 @@ static void set_bat_off(void)
 
     //VCCx2 power down
     //set_vccx2(0);
+    set_gpio_val(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), 0);
+    set_gpio_mode(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), GPIO_OUTPUT_MODE);        
+
     if(is_ac_connected()){ //AC in after power off press
         kernel_restart("reboot");
     }
@@ -1657,43 +1711,43 @@ static struct mtd_partition multi_partition_info[] =
 {
 	{
 		.name = "logo",
-		.offset = 32*1024*1024,
-		.size = 16*1024*1024,
+		.offset = 32*SZ_1M,
+		.size = 16*SZ_1M,
 	},
 	{
 		.name = "aml_logo",
-		.offset = 48*1024*1024,
-		.size = 16*1024*1024,
+		.offset = 48*SZ_1M,
+		.size = 16*SZ_1M,
 	},
 	{
 		.name = "recovery",
-		.offset = 64*1024*1024,
-		.size = 32*1024*1024,
+		.offset = 64*SZ_1M,
+		.size = 32*SZ_1M,
 	},
 	{
 		.name = "boot",
-		.offset = 96*1024*1024,
-		.size = 32*1024*1024,
+		.offset = 96*SZ_1M,
+		.size = 32*SZ_1M,
 	},
 	{
 		.name = "system",
-		.offset = 128*1024*1024,
-		.size = 256*1024*1024,
+		.offset = 128*SZ_1M,
+		.size = 256*SZ_1M,
 	},
 	{
 		.name = "cache",
-		.offset = 384*1024*1024,
-		.size = 128*1024*1024,
+		.offset = 384*SZ_1M,
+		.size = 128*SZ_1M,
 	},
 	{
 		.name = "userdata",
-		.offset = 512*1024*1024,
-		.size = 512*1024*1024,
+		.offset = 512*SZ_1M,
+		.size = 512*SZ_1M,
 	},
 	{
 		.name = "NFTL_Part",
-		.offset = ((512 + 512)*1024*1024),
-		.size = ((0x200000000 - (512 + 512)*1024*1024)),
+		.offset = MTDPART_OFS_APPEND,
+		.size = MTDPART_SIZ_FULL,
 	},
 };
 
@@ -2054,6 +2108,11 @@ static struct i2c_board_info __initdata aml_i2c_bus_info[] = {
         I2C_BOARD_INFO("wm8900", 0x1A),
         .platform_data = (void *)&wm8900_pdata,
     },
+#elif defined CONFIG_SND_AML_M1_MID_CS42L52
+    {
+        I2C_BOARD_INFO("cs42l52", 0x4A),
+	 .platform_data = (void *)&cs42l52_pdata,
+    },
 #endif
 
 #ifdef CONFIG_SN7325
@@ -2089,6 +2148,7 @@ static struct i2c_board_info __initdata aml_i2c_bus_info[] = {
     {
         I2C_BOARD_INFO("pixcir168", 0x5c),
         .irq = INT_GPIO_0,
+        .platform_data = (void *)&pixcir_pdata,
     },
 #endif
 
@@ -2202,6 +2262,9 @@ static void __init power_hold(void)
     
     //VCCx2 power up
     //set_vccx2(1);
+    set_gpio_val(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), 1);
+    set_gpio_mode(GPIOA_bank_bit(6), GPIOA_bit_bit0_14(6), GPIO_OUTPUT_MODE);        
+
 }
 
 static __init void m1_init_machine(void)
@@ -2209,6 +2272,7 @@ static __init void m1_init_machine(void)
     meson_cache_init();
 
     power_hold();
+    pm_power_off = set_bat_off;
     device_clk_setting();
     device_pinmux_init();
     platform_add_devices(platform_devs, ARRAY_SIZE(platform_devs));
@@ -2224,14 +2288,6 @@ static __init void m1_init_machine(void)
 #if defined(CONFIG_TOUCHSCREEN_ADS7846)
     ads7846_init_gpio();
     spi_register_board_info(spi_board_info_list, ARRAY_SIZE(spi_board_info_list));
-#endif
-#ifdef CONFIG_PIXCIR_CAPACITIVE_TOUCHSCREEN
-//#define gpio_shutdown ((GPIOD_bank_bit2_24(23)<<16) |GPIOD_bit_bit2_24(23))
-//#define gpio_irq ((GPIOD_bank_bit2_24(24)<<16) |GPIOD_bit_bit2_24(24))
-//	gpio_direction_output(gpio_shutdown, 1);
-//	gpio_direction_input(gpio_irq);
-//	gpio_enable_edge_int(gpio_to_idx(gpio_irq), 1, 0);
-//	msleep(50);
 #endif
     disable_unused_model();
 }

@@ -38,6 +38,7 @@
 #include <mach/am_regs.h>
 #include <linux/amports/vframe.h>
 #include <linux/amports/vframe_provider.h>
+#include <linux/amports/vframe_receiver.h>
 #include <linux/tvin/tvin.h>
 
 /* TVIN headers */
@@ -55,7 +56,7 @@
 #define VDIN_MODULE_NAME        "vdin"
 #define VDIN_DEVICE_NAME        "vdin"
 #define VDIN_CLASS_NAME         "vdin"
-
+#define PROVIDER_NAME   "vdin"
 #if defined(CONFIG_ARCH_MESON)
 #define VDIN_COUNT              1
 #elif defined(CONFIG_ARCH_MESON2)
@@ -135,9 +136,12 @@ void vdin_info_update(struct vdin_dev_s *devp, struct tvin_parm_s *para)
 {
     //check decoder signal status
     devp->para.status = para->status;
-    devp->para.fmt = para->fmt;
+    devp->para.fmt_info.fmt= para->fmt_info.fmt;
+	devp->para.fmt_info.v_active= para->fmt_info.v_active;
+	devp->para.fmt_info.h_active= para->fmt_info.h_active;
+	devp->para.fmt_info.frame_rate=para->fmt_info.frame_rate;
 
-    if((para->status != TVIN_SIG_STATUS_STABLE) || (para->fmt == TVIN_SIG_FMT_NULL))
+    if((para->status != TVIN_SIG_STATUS_STABLE) || (para->fmt_info.fmt== TVIN_SIG_FMT_NULL))
         return;
 
     //write vdin registers
@@ -169,6 +173,7 @@ static void vdin_start_dec(struct vdin_dev_s *devp)
 {
     vdin_vf_init();
     vdin_reg_vf_provider();
+     vf_notify_receiver(PROVIDER_NAME,VFRAME_EVENT_PROVIDER_START,NULL);
 #ifdef VDIN_DBG_MSG_CNT
         vdin_dbg_msg.vdin_isr_hard_counter = 0;
         vdin_dbg_msg.vdin_tasklet_counter = 0;
@@ -209,17 +214,17 @@ int start_tvin_service(int no ,tvin_parm_t *para)
     }
     devp = vdin_devp[no];
     devp->para.port = para->port;
-    devp->para.fmt = para->fmt;
-    devp->flags |= VDIN_FLAG_DEC_STARTED;  
-            printk("devp addr is %x",devp);
-            printk("addr_offset is %x",devp->addr_offset);          
+    devp->para.fmt_info.fmt= para->fmt_info.fmt;
+	devp->para.fmt_info.h_active= para->fmt_info.h_active;
+	devp->para.fmt_info.v_active= para->fmt_info.v_active;
+	devp->para.fmt_info.frame_rate= para->fmt_info.frame_rate;
+    devp->flags |= VDIN_FLAG_DEC_STARTED;       
     vdin_start_dec(devp);  
     msleep(10);
     tasklet_enable(&devp->isr_tasklet);
     devp->pre_irq_time = jiffies,
     enable_irq(devp->irq);      
-    vdin_notify_receiver(VFRAME_EVENT_PROVIDER_START,NULL ,NULL);
-    
+
 }
 
 int stop_tvin_service(int no)
@@ -232,7 +237,8 @@ int stop_tvin_service(int no)
     devp->flags &= (~VDIN_FLAG_DEC_STARTED);  
             disable_irq_nosync(devp->irq);
             tasklet_disable_nosync(&devp->isr_tasklet);     
-    vdin_notify_receiver(VFRAME_EVENT_PROVIDER_UNREG,NULL ,NULL);
+//    vdin_notify_receiver(VFRAME_EVENT_PROVIDER_UNREG,NULL ,NULL);
+//vf_notify_receiver(PROVIDER_NAME,VFRAME_EVENT_PROVIDER_UNREG,NULL);
     vdin_stop_dec(devp);
     
 }
@@ -356,8 +362,9 @@ static void vdin_isr_tasklet(unsigned long arg)
         vdin_set_vframe_prop_info(vf, devp->addr_offset);
 
         vfq_push_display(vf);   
-        vdin_notify_receiver(VFRAME_EVENT_PROVIDER_VFRAME_READY,NULL ,NULL);
-            
+        
+       // vdin_notify_receiver(VFRAME_EVENT_PROVIDER_VFRAME_READY,NULL ,NULL);
+ 	 vf_notify_receiver(PROVIDER_NAME,VFRAME_EVENT_PROVIDER_VFRAME_READY,NULL);           
 #ifdef VDIN_DBG_MSG_CNT
         vdin_dbg_msg.vdin_tasklet_valid_type_cnt++;
 #endif
@@ -465,7 +472,11 @@ static int vdin_ioctl(struct inode *inode, struct file *file, unsigned int cmd, 
 
             //init vdin signal info
             devp->para.port = para.port;
-            devp->para.fmt = para.fmt;
+            devp->para.fmt_info.fmt= para.fmt_info.fmt;
+			devp->para.fmt_info.frame_rate= para.fmt_info.frame_rate;
+			devp->para.fmt_info.h_active=para.fmt_info.h_active;
+			devp->para.fmt_info.v_active=para.fmt_info.v_active;
+			devp->para.fmt_info.reserved=para.fmt_info.reserved;
             devp->para.status = TVIN_SIG_STATUS_NULL;
             devp->para.cap_addr = 0x85100000;
             devp->flags |= VDIN_FLAG_DEC_STARTED;
@@ -512,7 +523,7 @@ static int vdin_ioctl(struct inode *inode, struct file *file, unsigned int cmd, 
 
         case TVIN_IOC_S_PARM:
         {
-            struct tvin_parm_s para = {TVIN_PORT_NULL, TVIN_SIG_FMT_NULL, TVIN_SIG_STATUS_NULL, 0, 0, 0,0};
+            struct tvin_parm_s para = {TVIN_PORT_NULL, {TVIN_SIG_FMT_NULL,0,0,0,0}, TVIN_SIG_STATUS_NULL, 0, 0, 0,0};
             if (copy_from_user(&para, argp, sizeof(struct tvin_parm_s)))
 		    {
                 ret = -EFAULT;

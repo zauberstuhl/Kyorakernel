@@ -825,6 +825,7 @@ void sme_ReportConnStatus (TI_HANDLE hSme, mgmtStatus_e eStatusType, TI_UINT32 u
     case STATUS_AP_DEAUTHENTICATE:
     case STATUS_AP_DISASSOCIATE:
     case STATUS_ROAMING_TRIGGER:
+	case STATUS_DISCONNECT_DURING_CONNECT:
     case STATUS_AUTH_REJECT:
         /* Indicate the authentication and/or association was sent to the AP */
         pSme->bAuthSent = TI_TRUE;
@@ -906,10 +907,6 @@ void sme_ReportApConnStatus (TI_HANDLE hSme, mgmtStatus_e eStatusType, TI_UINT32
         pSme->tDisAssoc.eMgmtStatus = eStatusType;
         pSme->tDisAssoc.uStatusCode = uStatusCode;
         sme_SmEvent (pSme->hSmeSm, SME_SM_EVENT_CONNECT_FAILURE, hSme);
-        break;
-
-    case STATUS_DISCONNECT_DURING_CONNECT:
-        sme_SmEvent (pSme->hSmeSm, SME_SM_EVENT_DISCONNECT, hSme);
         break;
 
     default:

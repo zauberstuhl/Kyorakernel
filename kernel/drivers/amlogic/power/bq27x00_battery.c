@@ -26,12 +26,17 @@
 #include <linux/i2c.h>
 #include <linux/slab.h>
 #include <asm/unaligned.h>
-#include <linux/bq27x00_battery.h>
+#include <linux/bq27x00_battery.h>  
+#include <asm/uaccess.h>
+#include <linux/fs.h>            
+#include <linux/device.h>    
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 static struct early_suspend bq27x00_early_suspend;
 #endif
 #define DRIVER_VERSION			"1.1.0"
+#define SUPPORT_DFI_WRITE
 
 #define BQ27x00_REG_TEMP		0x06
 #define BQ27x00_REG_VOLT		0x08
@@ -47,7 +52,6 @@ static struct early_suspend bq27x00_early_suspend;
 #define BQ27500_REG_SOC			0x2c
 #define BQ27500_FLAG_DSC		BIT(0)
 #define BQ27500_FLAG_FC			BIT(9)
-
 
 static int polling_count = 0;
 static int ac_status = 0;
@@ -78,12 +82,14 @@ static struct bq27x00_battery_pdata *pdata;
 struct bq27x00_device_info {
 	struct device 		*dev;
 	int			id;
+    int config_major;
 	struct bq27x00_access_methods	*bus;
 	struct power_supply	bat;
 	struct power_supply	ac;	
 	struct power_supply	usb;	
 	enum bq27x00_chip	chip;
-
+	struct class *config_class;
+	
 	struct i2c_client	*client;
 };
 static struct bq27x00_device_info *device_info;
@@ -96,14 +102,16 @@ static char *ac_supply_list[] = {
 };
 static enum power_supply_property bq27x00_battery_props[] = {
 	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
+	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_TEMP,
-	POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW,
-	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
-	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
+//	POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW,
+//	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
+//	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
 };
 
 /*
@@ -132,9 +140,9 @@ static int bq27x00_battery_temperature(struct bq27x00_device_info *di)
 	}
 
 	if (di->chip == BQ27500)
-		return temp - 2731;
+		return (temp - 2731)/10;  //k
 	else
-		return ((temp >> 2) - 273) * 10;
+		return ((temp >> 2) - 273);
 }
 
 /*
@@ -167,6 +175,7 @@ static int bq27x00_battery_current(struct bq27x00_device_info *di)
 	int flags = 0;
 
 	ret = bq27x00_read(BQ27x00_REG_AI, &curr, 0, di);
+
 	if (ret) {
 		dev_err(di->dev, "error reading current\n");
 		return 0;
@@ -334,14 +343,20 @@ static int bq27x00_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = bq27x00_battery_temperature(di);
 		break;
-	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW:
-		ret = bq27x00_battery_time(di, BQ27x00_REG_TTE, val);
-		break;
-	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
-		ret = bq27x00_battery_time(di, BQ27x00_REG_TTECP, val);
-		break;
-	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
-		ret = bq27x00_battery_time(di, BQ27x00_REG_TTF, val);
+//	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW:
+//		ret = bq27x00_battery_time(di, BQ27x00_REG_TTE, val);
+//		break;
+//	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
+//		ret = bq27x00_battery_time(di, BQ27x00_REG_TTECP, val);
+//		break;
+//	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
+//		ret = bq27x00_battery_time(di, BQ27x00_REG_TTF, val);
+//		break;
+    case POWER_SUPPLY_PROP_TECHNOLOGY:
+        val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
+        break;
+	case POWER_SUPPLY_PROP_HEALTH:	
+		val->intval = POWER_SUPPLY_HEALTH_GOOD;
 		break;
 	default:
 		return -EINVAL;
@@ -424,6 +439,8 @@ static void battery_work_func(struct work_struct *work)
 {
     bool ac_changed,bat_changed;
     
+    ac_changed = false;
+    bat_changed = false;
     polling_count ++;
     if(polling_count >= 6){
         polling_count = 0;
@@ -433,7 +450,7 @@ static void battery_work_func(struct work_struct *work)
     if(pdata->is_ac_online){
         if(ac_status != pdata->is_ac_online()){
             ac_status = pdata->is_ac_online();
-            ac_changed = true;
+            ac_changed = true;      
         }
     }
     
@@ -459,9 +476,9 @@ static void battery_work_func(struct work_struct *work)
         power_supply_changed(&device_info->bat); 
     }    
         
-    if(ac_changed)
+    if(ac_changed){
         power_supply_changed(&device_info->ac);      
-      
+    }
 }
 
 static void polling_timer_func(unsigned long unused)
@@ -469,6 +486,167 @@ static void polling_timer_func(unsigned long unused)
     schedule_work(&battery_work);
 	mod_timer(&polling_timer,jiffies + msecs_to_jiffies(pdata->polling_interval));        
 }
+#ifdef SUPPORT_DFI_WRITE
+
+static int _bq27x00_read_i2c(struct bq27x00_device_info *di,u16 slave_addr, u8 reg, u8 len, u8 *data)
+{
+    struct i2c_client *client = di->client;
+    int ret;
+    u8 msgbuf0[1] = { reg };
+    u16 slave = slave_addr;
+    u16 flags = 0;
+    
+    struct i2c_msg msg[2] = { 
+        { slave, flags, 1, msgbuf0 },
+        { slave, flags|I2C_M_RD, len, data }
+    };
+
+    ret = i2c_transfer(client->adapter, msg, ARRAY_SIZE(msg));
+    return ret;
+}
+
+static int _bq27x00_write_i2c(struct bq27x00_device_info *di,u16 slave_addr, u8 reg, u8 len, u8 *data)
+{
+    struct i2c_client *client = di->client;
+    u8 msgbuf0[1] = { reg };
+    u16 slave = slave_addr;
+    u16 flags = 0;
+    
+    struct i2c_msg msg[2] = {
+        { slave, flags, 1, msgbuf0 },
+        { slave, flags|I2C_M_NOSTART, len, data }
+    };
+
+    return i2c_transfer(client->adapter, msg, ARRAY_SIZE(msg));
+}
+
+loff_t bq27x00_file_seek(struct file *filp, loff_t off, int whence)                      
+{
+        loff_t newpos;
+
+        switch(whence) {
+          case 0: /* SEEK_SET */
+                newpos = off;
+                break;
+          default: /* can't happen */
+                return -EINVAL;
+        }
+
+        if (newpos < 0) return -EINVAL;
+        filp->f_pos = newpos;
+        return newpos;
+}
+
+static int bq27x00_file_open(struct inode *inode, struct file *file)
+{
+    int ret = 0;
+    u8 data[2];
+	del_timer_sync(&polling_timer);
+	flush_scheduled_work();
+    mdelay(1000);
+    
+    data[0] = 0x02;
+    data[1] = 0x00;
+	_bq27x00_write_i2c(device_info,0x55,0x00,2,data);
+    mdelay(10);	
+    _bq27x00_read_i2c(device_info,0x55,0x00,2,data);
+    printk("FW version = %x,%x\n", data[0],data[1]);
+
+
+    data[0] = 0x00;
+    data[1] = 0x0f;
+	_bq27x00_write_i2c(device_info,0x55,0x00,2,data);	
+		
+    printk("bq27x00_file_open\n");
+    return ret;
+}
+
+static int bq27x00_file_release(struct inode *inode, struct file *file)
+{
+    int ret = 0;
+    u8 data[2];
+    
+    mdelay(200);	    
+    data[1] = 0x00;
+    data[0] = 0x02;	
+        
+	_bq27x00_write_i2c(device_info,0x55,0x00,2,data);
+    mdelay(10);	
+    _bq27x00_read_i2c(device_info,0x55,0x00,2,data);
+    printk("FW version = %x,%x\n", data[0],data[1]);	
+    	
+    mdelay(250);	
+    setup_timer(&polling_timer, polling_timer_func, 0);
+    mod_timer(&polling_timer,
+			  jiffies + msecs_to_jiffies(pdata->polling_interval));     
+    printk("bq27x00_file_release\n");
+    return ret;
+}
+
+
+static ssize_t bq27x00_file_read( struct file *file, char __user *buf,                     
+    size_t count, loff_t *ppos )                                                    
+{
+    uint8_t buffer[20]={0};
+    u16 addr = 0x0b;
+    unsigned reg = *ppos;
+//    int i;
+        
+    if(count > 128){
+        printk("%s, buffer exceed 128 bytes\n", __func__);
+        return -1;
+    }
+      
+    _bq27x00_read_i2c(device_info,addr,reg,count,buffer);
+
+//    printk("bq27x00_file_read buffer = ");     
+//    for(i =0;i < count;i++)
+//    printk("%x ",buffer[i]);   
+//    printk(",count = %d, reg = %x\n",count,reg); 
+        
+      
+    copy_to_user(buf,buffer,count);
+  
+    return count;
+}
+
+static ssize_t bq27x00_file_write( struct file *file, const char __user *buf,
+    size_t count, loff_t *ppos )
+{
+    uint8_t buffer[100]={0};
+    u16 addr = 0x0b;
+    unsigned reg = *ppos;
+//    int i;
+
+    if(count > 100){
+        printk("%s, buffer exceed 100 bytes\n", __func__);
+        return -1;
+    }
+ 
+
+    copy_from_user(buffer, buf, count);   
+    
+//    printk("bq27x00_file_write buf = ");     
+//    for(i =0;i < count;i++)
+//    printk("%x ",buffer[i]);   
+//    printk(",count = %d, reg = %x\n",count,reg);   
+
+    _bq27x00_write_i2c(device_info,addr,reg,count,buffer);    
+
+    return -1;
+}
+          
+static const struct file_operations bq27x00_fops = {
+     .owner      = THIS_MODULE,
+     .llseek     = bq27x00_file_seek,           
+     .open       = bq27x00_file_open,
+     .release    = bq27x00_file_release,
+     .read       = bq27x00_file_read,
+     .write      = bq27x00_file_write,
+     .ioctl		 = NULL, 
+ };
+ 
+#endif
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void early_suspend(struct early_suspend *h)
@@ -545,7 +723,7 @@ static int bq27x00_battery_probe(struct i2c_client *client,
         printk("set slow charge\n");
 	} 
 	
-	name = kasprintf(GFP_KERNEL, "%s-%d", id->name, num);
+	name = kasprintf(GFP_KERNEL, "bq27x00");
 	if (!name) {
 		dev_err(&client->dev, "failed to allocate device name\n");
 		retval = -ENOMEM;
@@ -619,7 +797,16 @@ static int bq27x00_battery_probe(struct i2c_client *client,
 #endif
 	
 	dev_info(&client->dev, "support ver. %s enabled\n", DRIVER_VERSION);
-
+	
+	di->config_major = register_chrdev(0,di->bat.name,&bq27x00_fops);
+    printk("bq27x00_fops majo = %d\n",di->config_major);
+	if(di->config_major<=0){
+		printk("register char device error\n");
+	}	
+	
+    di->config_class=class_create(THIS_MODULE,di->bat.name);
+    di->dev=device_create(di->config_class,	NULL,
+    		MKDEV(di->config_major,0),NULL,di->bat.name);	
 	return 0;
 
 batt_failed_4:
@@ -643,6 +830,13 @@ static int bq27x00_battery_remove(struct i2c_client *client)
 	power_supply_unregister(&di->bat);
 	power_supply_unregister(&di->ac);
 	power_supply_unregister(&di->usb);	
+    unregister_chrdev(di->config_major,di->bat.name);
+    if(di->config_class)
+    {
+        if(di->dev)
+        device_destroy(di->config_class,MKDEV(di->config_major,0));
+        class_destroy(di->config_class);
+    }    
 	kfree(di->bat.name);
 
 	mutex_lock(&battery_mutex);

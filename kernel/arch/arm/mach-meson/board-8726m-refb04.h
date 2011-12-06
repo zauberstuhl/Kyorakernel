@@ -62,7 +62,8 @@
 
 /********VDIN memory configuration ***************/
 #define VDIN_ADDR_START		U_ALIGN(CODEC_ADDR_END)
-#define VDIN_ADDR_END		(VDIN_ADDR_START +CODEC_MEM_SIZE -1)
+#define VDIN_MEM_SIZE		U_ALIGN(16*SZ_1M)
+#define VDIN_ADDR_END		(VDIN_ADDR_START +VDIN_MEM_SIZE -1)
 
 #if defined(CONFIG_AMLOGIC_VIDEOIN_MANAGER)
 #define VM_SIZE     (SZ_1M*16)

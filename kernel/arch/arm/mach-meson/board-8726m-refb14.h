@@ -1,5 +1,5 @@
-#ifndef __BOARD_8626M_K7_H
-#define __BOARD_8626M_K7_H
+#ifndef __BOARD_8726M_B14_H
+#define __BOARD_8726M_B14_H
 
 #include <asm/page.h>
 
@@ -26,7 +26,7 @@
 #define OSD_576_PIX			(768*576)
 #define OSD_720_PIX			(1280*720)
 #define OSD_1080_PIX		(1920*1080)
-#define OSD_PANEL_PIX		(1024*600)
+#define OSD_PANEL_PIX		(1280*768)
 #define B16BpP	(2)
 #define B32BpP	(4)
 #define DOUBLE_BUFFER	(2)
@@ -62,7 +62,8 @@
 
 /********VDIN memory configuration ***************/
 #define VDIN_ADDR_START		U_ALIGN(CODEC_ADDR_END)
-#define VDIN_ADDR_END		(VDIN_ADDR_START +CODEC_MEM_SIZE -1)
+#define VDIN_MEM_SIZE		U_ALIGN(16*SZ_1M)
+#define VDIN_ADDR_END		(VDIN_ADDR_START +VDIN_MEM_SIZE -1)
 
 #if defined(CONFIG_AMLOGIC_VIDEOIN_MANAGER)
 #define VM_SIZE     (SZ_1M*16)
@@ -72,6 +73,7 @@
 
 #define VM_ADDR_START U_ALIGN(VDIN_ADDR_END)
 #define VM_ADDR_END   (VM_SIZE+VM_ADDR_START-1)
+
 #if defined(CONFIG_AM_DEINTERLACE_SD_ONLY)
 #define DI_MEM_SIZE			(SZ_1M*3)
 #else
@@ -80,9 +82,20 @@
 #define DI_ADDR_START		U_ALIGN(VM_ADDR_END)
 #define DI_ADDR_END			(DI_ADDR_START+DI_MEM_SIZE-1)
 
+#ifdef CONFIG_POST_PROCESS_MANAGER
+#define PPMGR_MEM_SIZE                  (SZ_1M*32)
+#define PPMGR_ADDR_START                U_ALIGN(DI_ADDR_END)
+#define PPMGR_ADDR_END                  (PPMGR_ADDR_START+PPMGR_MEM_SIZE-1)
+
 #define STREAMBUF_MEM_SIZE   		(SZ_1M*7)
-#define STREAMBUF_ADDR_START		U_ALIGN(DI_ADDR_END)
+#define STREAMBUF_ADDR_START		U_ALIGN(PPMGR_ADDR_END)
 #define STREAMBUF_ADDR_END		(STREAMBUF_ADDR_START+STREAMBUF_MEM_SIZE-1)
+#else
+#define STREAMBUF_MEM_SIZE              (SZ_1M*7)
+#define STREAMBUF_ADDR_START            U_ALIGN(DI_ADDR_END)
+#define STREAMBUF_ADDR_END              (STREAMBUF_ADDR_START+STREAMBUF_MEM_SIZE-1)
+#endif
+
 
 #define RESERVED_MEM_END	(STREAMBUF_ADDR_END)
 

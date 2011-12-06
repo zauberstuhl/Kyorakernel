@@ -159,11 +159,22 @@ void start_next_request(dwc_otg_pcd_ep_t * _ep)
 {
 	dwc_otg_pcd_request_t *req = 0;
 
+	if (!list_empty(&_ep->pcd->req_queue) && _ep->dwc_ep.num && _ep->dwc_ep.is_in){
+		req = list_entry(_ep->pcd->req_queue.next, dwc_otg_pcd_request_t, pcd_queue); 
+		_ep = req->ep;
+		DWC_DEBUGPL(DBG_PCD, "ep%d,len=%d,%s\n",_ep->dwc_ep.num,req->req.length,
+			_ep->dwc_ep.is_in?"in":"out");
+	}
+
 	if (!list_empty(&_ep->queue)) {
 		req = list_entry(_ep->queue.next, dwc_otg_pcd_request_t, queue);
 
 		if(GET_CORE_IF(_ep->pcd)->dma_enable)
 			dwc_otg_pcd_dma_map(&_ep->dwc_ep, &req->req);
+
+		if(_ep->dwc_ep.is_in && _ep->dwc_ep.num){
+			_ep->pcd->ep_in_sync = _ep->dwc_ep.num;
+		}
 		/* Setup and start the Transfer */
 		_ep->dwc_ep.start_xfer_buff = req->req.buf;
 		_ep->dwc_ep.xfer_buff = req->req.buf;
@@ -1612,6 +1623,12 @@ static void complete_ep(dwc_otg_pcd_ep_t * _ep)
 	if (!list_empty(&_ep->queue)) {
 		req = list_entry(_ep->queue.next, dwc_otg_pcd_request_t, queue);
 	}
+
+	if(!req){
+		DWC_DEBUGPL(DBG_PCDV, "req = NULL, return %s\n",__func__);
+		return;
+	}
+
 	DWC_DEBUGPL(DBG_PCD, "Requests %d\n", _ep->pcd->request_pending);
 
 	if (_ep->dwc_ep.is_in) {

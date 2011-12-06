@@ -1075,7 +1075,7 @@ TI_STATUS assoc_smCapBuild(assoc_t *pCtx, TI_UINT16 *cap)
     TI_UINT8            ratesBuf[DOT11_MAX_SUPPORTED_RATES];
     TI_UINT32           len = 0, ofdmIndex = 0;
     TI_BOOL             b11nEnable, bWmeEnable;
-
+	ECipherSuite        rsnEncryption;
     *cap = 0;
 
     /* Bss type */
@@ -1096,6 +1096,7 @@ TI_STATUS assoc_smCapBuild(assoc_t *pCtx, TI_UINT16 *cap)
     /* Privacy */
     param.paramType = RSN_ENCRYPTION_STATUS_PARAM;
     status =  rsn_getParam(pCtx->hRsn, &param);
+	rsnEncryption = param.content.rsnEncryptionStatus;
     if (status == TI_OK)
     {
         if (param.content.rsnEncryptionStatus != TWD_CIPHER_NONE)
@@ -1182,24 +1183,29 @@ TI_STATUS assoc_smCapBuild(assoc_t *pCtx, TI_UINT16 *cap)
 */
     }
 
-    /* Primary Site support HT ? */
-    param.paramType = SITE_MGR_PRIMARY_SITE_HT_SUPPORT;
-    siteMgr_getParam(pCtx->hSiteMgr, &param);
-
-    if (param.content.bPrimarySiteHtSupport == TI_TRUE)
+    if (rsnEncryption != TWD_CIPHER_TKIP &&
+        rsnEncryption != TWD_CIPHER_WEP &&
+        rsnEncryption != TWD_CIPHER_WEP104)
     {
-        /* Immediate Block Ack subfield - (is WME on?) AND (is HT Enable?) */
-        /* verify 11n_Enable and Chip type */
-        StaCap_IsHtEnable (pCtx->hStaCap, &b11nEnable);
-        /* verify that WME flag enable */
-        qosMngr_GetWmeEnableFlag (pCtx->hQosMngr, &bWmeEnable); 
+
+        /* Primary Site support HT ? */
+        param.paramType = SITE_MGR_PRIMARY_SITE_HT_SUPPORT;
+        siteMgr_getParam(pCtx->hSiteMgr, &param);
     
-        if ((b11nEnable != TI_FALSE) && (bWmeEnable != TI_FALSE))
+        if (param.content.bPrimarySiteHtSupport == TI_TRUE)
         {
-            *cap |= DOT11_CAPS_IMMEDIATE_BA;
+            /* Immediate Block Ack subfield - (is WME on?) AND (is HT Enable?) */
+            /* verify 11n_Enable and Chip type */
+            StaCap_IsHtEnable (pCtx->hStaCap, &b11nEnable);
+            /* verify that WME flag enable */
+            qosMngr_GetWmeEnableFlag (pCtx->hQosMngr, &bWmeEnable); 
+        
+            if ((b11nEnable != TI_FALSE) && (bWmeEnable != TI_FALSE))
+            {
+                *cap |= DOT11_CAPS_IMMEDIATE_BA;
+            }
         }
     }
-
     return TI_OK;
 }
 
@@ -1474,15 +1480,6 @@ TI_STATUS assoc_smRequestBuild(assoc_t *pCtx, TI_UINT8* reqBuf, TI_UINT32* reqLe
 
     }
 
-    status = qosMngr_getQosCapabiltyInfeElement(pCtx->hQosMngr,pRequest,&len);
-    if (status != TI_OK)
-    {
-        return TI_NOK;
-    }
-    pRequest += len;
-    *reqLen += len;
-
-
 #ifdef XCC_MODULE_INCLUDED
     status = rsn_getXCCExtendedInfoElement(pCtx->hRsn, pRequest, (TI_UINT8*)&len);
     if (status != TI_OK)
@@ -1553,8 +1550,13 @@ TI_STATUS assoc_smRequestBuild(assoc_t *pCtx, TI_UINT8* reqBuf, TI_UINT32* reqLe
     siteMgr_getParam(pCtx->hSiteMgr, &param);
 
     /* Disallow TKIP with HT Rates: If this is the case - discard HT rates from Association Request */
-    if((TI_TRUE == param.content.bPrimarySiteHtSupport) && (eCipherSuite != TWD_CIPHER_TKIP))
+    if((TI_TRUE == param.content.bPrimarySiteHtSupport) && 
+       ( (eCipherSuite != TWD_CIPHER_TKIP) && 
+         (eCipherSuite != TWD_CIPHER_WEP)  &&
+         (eCipherSuite != TWD_CIPHER_WEP104)  )			)
+         
     {
+    
         status = StaCap_GetHtCapabilitiesIe (pCtx->hStaCap, pRequest, &len);
     	if (status != TI_OK)
     	{

@@ -903,6 +903,9 @@ int hci_register_dev(struct hci_dev *hdev)
 	hdev->idle_timeout = 0;
 	hdev->sniff_max_interval = 800;
 	hdev->sniff_min_interval = 80;
+#ifdef CONFIG_BT_DEVICE
+    hdev->inquiry_state = 0;
+#endif
 
 	tasklet_init(&hdev->cmd_task, hci_cmd_task,(unsigned long) hdev);
 	tasklet_init(&hdev->rx_task, hci_rx_task, (unsigned long) hdev);

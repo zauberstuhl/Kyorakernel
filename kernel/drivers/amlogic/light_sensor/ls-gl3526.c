@@ -25,8 +25,8 @@
 #include <linux/module.h>
 #include <linux/saradc.h>
 
-#define POLL_INTERVAL	2000 	/* poll for input every 2s*/
-#define LUX_LEVEL	4					/* 0~4 report 5 levels*/
+#define POLL_INTERVAL	2000 	/* poll for input every 2s */
+#define LUX_LEVEL	4			/* 0~4 report 5 levels */
 
 static struct platform_device *pdev;
 static struct input_polled_dev *light_sensor_idev;
@@ -35,7 +35,7 @@ static const int sAdcValues[LUX_LEVEL] = {
     50,
     100,
     200,    
-		500
+	500
 };
 
 struct light_sensor_info {
@@ -48,7 +48,7 @@ static struct light_sensor_info ls_info;
 static ssize_t light_sensor_lux_level_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "(%d)\n", 0);
+	return sprintf(buf, "%d\n", ls_info.lux_level);
 }
 
 static DEVICE_ATTR(lux_level, 0444, light_sensor_lux_level_show, NULL);

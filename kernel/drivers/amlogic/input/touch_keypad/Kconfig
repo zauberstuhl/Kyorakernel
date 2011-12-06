@@ -19,3 +19,13 @@ config TOUCH_KEY_PAD_SO340010
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called .
+
+config TOUCH_KEY_PAD_HA2605
+        tristate "HA2605 touch key pad support"
+        default n
+        help
+          Say Y here if you want to use the HA2605 touch key pad support.
+
+          To compile this driver as a module, choose M here: the
+          module will be called .
+

@@ -438,6 +438,10 @@ static void ProcessReport(unsigned char *buf, struct _egalax_i2c *p_egalax_i2c)
 	ContactID = (buf[1]&0x7C)>>2;
 	X = ((buf[3]<<8) + buf[2])>>4;
 	Y = ((buf[5]<<8) + buf[4])>>4;
+	if(X > 2045) X=2045;
+	if(Y > 2045) Y=2045;
+	if (X <2) X=2;
+	if (Y <2) Y=2;
 	
 	if( !(ContactID>=0 && ContactID<MAX_SUPPORT_POINT) )
 	{

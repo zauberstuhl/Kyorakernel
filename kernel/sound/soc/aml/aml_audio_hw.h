@@ -1,7 +1,7 @@
 #ifndef __AML_AUDIO_HW_H__
 #define __AML_AUDIO_HW_H__
 
-#ifdef CONFIG_ARCH_MESON
+#if defined (CONFIG_ARCH_MESON) || defined (CONFIG_ARCH_MESON2)
 
 /* assumming PLL source is 24M */
 
@@ -132,19 +132,23 @@ typedef struct {
 
 
 #define AIU_958_MODE_RAW    0
-#define AIU_958_MODE_PCM24  1
-#define AIU_958_MODE_PCM16  2
+#define AIU_958_MODE_PCM16  1
+#define AIU_958_MODE_PCM24  2
+#define AIU_958_MODE_PCM32  3
 
-#define AIU_I2S_MODE_2x16   0
-#define AIU_I2S_MODE_2x24   1
-#define AIU_I2S_MODE_8x24   2
-#define AIU_I2S_MODE_2x32   3
+#define AIU_I2S_MODE_PCM16   0
+#define AIU_I2S_MODE_PCM24   2
+#define AIU_I2S_MODE_PCM32   3
 
 #define AUDIO_ALGOUT_DAC_FORMAT_DSP             0
 #define AUDIO_ALGOUT_DAC_FORMAT_LEFT_JUSTIFY    1
 
+extern unsigned ENABLE_IEC958;
+extern unsigned IEC958_MODE;
+extern unsigned I2S_MODE;
+
 void audio_set_aiubuf(u32 addr, u32 size);
-void audio_set_958outbuf(u32 addr, u32 size);
+void audio_set_958outbuf(u32 addr, u32 size, int flag);
 void audio_in_i2s_set_buf(u32 addr, u32 size);
 void audio_in_spdif_set_buf(u32 addr, u32 size);
 void audio_in_i2s_enable(int flag);
@@ -158,12 +162,12 @@ unsigned int read_i2s_rd_ptr(void);
 void audio_i2s_unmute(void);
 void audio_i2s_mute(void);
 void audio_util_set_dac_format(unsigned format);
-void audio_hw_set_958_mode(unsigned mode, _aiu_958_raw_setting_t * set);
+void audio_set_958_mode(unsigned mode, _aiu_958_raw_setting_t * set);
 unsigned int read_i2s_mute_swap_reg(void);
 void audio_i2s_swap_left_right(unsigned int flag);
 int audio_dac_set(unsigned freq);
-int if_audio_out_enable();
-int if_audio_in_i2s_enable();
+int if_audio_out_enable(void);
+int if_audio_in_i2s_enable(void);
 
 
 #define APB_ADAC_RESET                		(0x5000+0x00*4)

@@ -10,9 +10,11 @@
 #include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/capts.h>
-#ifdef CONFIG_SN7325
-#include <linux/sn7325.h>
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	#include <linux/earlysuspend.h>
+	static struct early_suspend sis_early_suspend;
 #endif
+
 #define DRIVER_NAME         "sis92xx"
 #define DRIVER_VERSION   "1"
 
@@ -34,7 +36,10 @@
 int sis92xx_reset(struct device *dev);
 int sis92xx_calibration(struct device *dev);
 int sis92xx_get_event (struct device *dev, struct ts_event *event);
-
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static int sis92xx_suspend(struct early_suspend *handler);
+static int sis92xx_resume(struct early_suspend *handler);
+#endif
 struct ts_chip sis92xx_chip = {
     .name = DRIVER_NAME,
     .version = DRIVER_VERSION,
@@ -189,6 +194,7 @@ int sis92xx_get_event (struct device *dev, struct ts_event *event)
     u8 packet_size;
     u8 event_num = 0;
      int i;
+	 
     memset(buf, 0, SIS92XX_PACKET_SIZE);   
     if (sis92xx_read_block(client, SIS92XX_CMD_NORMAL,
             buf, SIS92XX_PACKET_SIZE) < 0) {
@@ -243,31 +249,66 @@ int sis92xx_get_event (struct device *dev, struct ts_event *event)
 
 static int sis92xx_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
-        #ifdef CONFIG_SN7325
-        printk("power on 7325 1\n");
-        configIO(1, 0);
-        setIO_level(1, 1, 1);//PP1
-        #endif
-    return capts_probe(&client->dev, &sis92xx_chip);
+	int ret;
+	struct ts_platform_data *pdata = client->dev.platform_data;
+
+	if(pdata&&pdata->power_off&&pdata->power_on){
+		pdata->power_off();
+		mdelay(50);
+		pdata->power_on();
+	}
+	ret = capts_probe(&client->dev, &sis92xx_chip);
+#ifdef CONFIG_HAS_EARLYSUSPEND
+		sis_early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
+		sis_early_suspend.suspend = sis92xx_suspend;
+		sis_early_suspend.resume = sis92xx_resume;
+		sis_early_suspend.param = client;
+		register_early_suspend(&sis_early_suspend);
+#endif
+    return ret;
 }
 
 
 static int sis92xx_remove(struct i2c_client *client)
 {
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	unregister_early_suspend(&sis_early_suspend);
+#endif
     return capts_remove(&client->dev);
 }
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static int sis92xx_suspend(struct early_suspend *handler)
+{
+	int ret = -1;
+	pm_message_t msg={0};
+	if(handler && handler->param) {
+		struct i2c_client *client = (struct i2c_client *)handler->param;
+		ret = capts_suspend(&client->dev, msg);
+	}
+	return ret;
+}
 
+static int sis92xx_resume(struct early_suspend *handler)
+{
+ 	int ret = -1;
+	if(handler && handler->param) {
+		struct i2c_client *client = (struct i2c_client *)handler->param;
+		ret = capts_resume(&client->dev);
+	}
+	return ret;
+}
+#else
 static int sis92xx_suspend(struct i2c_client *client, pm_message_t msg)
 {
     return capts_suspend(&client->dev, msg);
 }
 
-
 static int sis92xx_resume(struct i2c_client *client)
 {
     return capts_resume(&client->dev);
 }
+#endif
 
 static const struct i2c_device_id sis92xx_ids[] = {
    { DRIVER_NAME, 0 },

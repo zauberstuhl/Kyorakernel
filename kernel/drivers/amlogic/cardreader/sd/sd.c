@@ -19,6 +19,7 @@
 #include <linux/cardreader/card_block.h>
 #include <linux/cardreader/cardreader.h>
 #include <linux/cardreader/sdio.h>
+#include <linux/aml_uevent_msg.h>
 
 #include "sd_misc.h"
 #include "sd_protocol.h"
@@ -88,18 +89,33 @@ void sd_insert_detector(struct memory_card *card)
 void sd_open(struct memory_card *card)
 {
 	int ret;
+	struct aml_card_info *aml_card_info = card->card_plat_info;
 	SD_MMC_Card_Info_t *sd_mmc_info = (SD_MMC_Card_Info_t *)card->card_info;
 
+	if (aml_card_info->card_extern_init)
+		aml_card_info->card_extern_init();
 	ret = sd_mmc_init(sd_mmc_info);
+
+	if(ret)
+		ret = sd_mmc_init(sd_mmc_info);
+
+	if(ret)
+		ret = sd_mmc_init(sd_mmc_info);
 
 	card->capacity = sd_mmc_info->blk_nums;
 	card->sdio_funcs  = sd_mmc_info->sdio_function_nums;
 	memcpy(card->raw_cid, &(sd_mmc_info->raw_cid), sizeof(card->raw_cid));
 
 	if(ret)
+	{
 		card->unit_state = CARD_UNIT_READY;
+		aml_send_msg("IDENTIFY", 1);
+	}
 	else
+	{
 		card->unit_state = CARD_UNIT_PROCESSED;
+		aml_send_msg("IDENTIFY", 0);
+	}
 
 	return;
 }

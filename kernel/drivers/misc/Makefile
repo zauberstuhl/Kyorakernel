@@ -35,4 +35,5 @@ obj-y				+= cb710/
 obj-$(CONFIG_VMWARE_BALLOON)	+= vmware_balloon.o
 obj-$(CONFIG_WL127X_RFKILL)	+= wl127x-rfkill.o
 obj-$(CONFIG_APANIC)		+= apanic.o
-obj-$(CONFIG_SIX_AXIS_SENSOR_MPU3050)	+= mpu3050/
+obj-$(CONFIG_MPU_PRE_V340)	+= mpu3050/
+obj-$(CONFIG_MPU_NEW)		+= mpu3050_new/

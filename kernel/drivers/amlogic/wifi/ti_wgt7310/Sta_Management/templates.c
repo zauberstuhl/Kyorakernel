@@ -224,7 +224,7 @@ TI_STATUS buildProbeReqTemplate(siteMgr_t *pSiteMgr, TSetTemplate *pTemplate, TS
 	char				*pBuf;
 	int i;
 	probeReqTemplate_t	*pBuffer = (probeReqTemplate_t	*)pTemplate->ptr;
-	TI_UINT32			 size;
+	TI_UINT32			 size = 0;
 	dot11_RATES_t		*pDot11Rates;	
 	TI_UINT32			 len = 0, ofdmIndex = 0;
 	TI_UINT32			 suppRatesLen, extSuppRatesLen;
@@ -369,6 +369,13 @@ TI_STATUS buildProbeReqTemplate(siteMgr_t *pSiteMgr, TSetTemplate *pTemplate, TS
         pBuf += sizeof(dot11_eleHdr_t) + pSiteMgr->uWscIeSize + DOT11_OUI_LEN;	
     }
 #endif /*SUPPL_WPS_SUPPORT*/
+
+	if (pSiteMgr->uProbeReqExtraIesLen != 0)
+	{
+        os_memoryCopy(pSiteMgr->hOs, pBuf, pSiteMgr->probeReqExtraIes, pSiteMgr->uProbeReqExtraIesLen);
+        size += pSiteMgr->uProbeReqExtraIesLen;
+        pBuf += pSiteMgr->uProbeReqExtraIesLen;
+	}
 
 	pTemplate->len = size;
 	

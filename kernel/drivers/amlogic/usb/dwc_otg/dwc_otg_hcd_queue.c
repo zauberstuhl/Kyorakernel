@@ -111,6 +111,7 @@ void dwc_otg_hcd_qh_free(dwc_otg_qh_t * _qh)
  * @param[in] _urb Holds the information about the device/endpoint that we need
  * to initialize the QH. */
 #define SCHEDULE_SLOP 10
+#define SCHEDULE_SPLIT_SLOP	10  /* 1 == 125us,  10 -> 1.25ms, 20 -> 2.5ms, */
 void dwc_otg_hcd_qh_init(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh,
 			 struct urb *_urb)
 {
@@ -187,6 +188,13 @@ void dwc_otg_hcd_qh_init(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh,
 			_qh->start_split_frame = _qh->sched_frame;
 		}
 
+	}else{
+		if(_qh->do_split){
+			_qh->interval = SCHEDULE_SPLIT_SLOP;
+			_qh->sched_frame = dwc_frame_num_inc(_hcd->frame_number,
+						     _qh->interval);
+
+		};
 	}
 
 	DWC_DEBUGPL(DBG_HCD, "DWC OTG HCD QH Initialized\n");

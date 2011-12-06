@@ -87,6 +87,10 @@
 #include <sound/wm8900.h>
 #endif
 
+#ifdef CONFIG_EFUSE
+#include <linux/efuse.h>
+#endif
+
 #if defined(CONFIG_JPEGLOGO)
 static struct resource jpeglogo_resources[] = {
     [0] = {
@@ -161,21 +165,11 @@ static struct platform_device adc_ts_device = {
 #include <linux/adc_keypad.h>
 
 static struct adc_key adc_kp_key[] = {
-#if 1	// w10
-	{KEY_PAGEDOWN,		"vol-",	CHAN_4,	0, 60},	// 0v	102
-	{KEY_PAGEUP,		"vol+",	CHAN_4,	306, 60},	// 0v	28
-	{KEY_TAB,	             "exit",     CHAN_4,	602, 60},	// 0v	15
-	{KEY_LEFTMETA,		"menu",	CHAN_4,	760, 60},	// 0v	125
-	{KEY_HOME,		"home",	CHAN_4,	854, 60},	// 0v	125		
-#else // arm
-	{KEY_MENU,		"menu",	CHAN_4,	0, 60},	// 0v
-	{KEY_UP,			"up",		CHAN_4, 180, 60},	// 0.58v
-	{KEY_DOWN,		"down",	CHAN_4, 285, 60},	// 0.92v
-	{KEY_LEFT,		"left",	CHAN_4, 400, 60},	// 1.29v
-	{KEY_RIGHT,		"right",	CHAN_4, 505, 60},	// 1.63v
-	{KEY_EXIT,		"exit",	CHAN_4, 624, 60},	// 2.01v
-	{KEY_OK,		"ok",		CHAN_4, 850, 60},	// 2.74v
-#endif
+	{KEY_VOLUMEDOWN,    "vol-",	CHAN_4,	0, 60},	// 0v	102
+	{KEY_VOLUMEUP,      "vol+",	CHAN_4,	306, 60},	// 0v	28
+	{KEY_BACK,          "exit",	CHAN_4,	602, 60},	// 0v	15
+	{KEY_MENU,          "menu",	CHAN_4,	760, 60},	// 0v	125
+	{KEY_HOME,          "home",	CHAN_4,	854, 60},	// 0v	125
 };
 
 static struct adc_kp_platform_data adc_kp_pdata = {
@@ -1191,6 +1185,27 @@ static struct platform_device aml_uart_device = {
 };
 #endif
 
+#ifdef CONFIG_EFUSE
+static bool efuse_data_verify(unsigned char *usid)
+{
+    return true;
+}
+
+static struct efuse_platform_data aml_efuse_plat = {
+    .pos = 337,
+    .count = 20,
+    .data_verify = efuse_data_verify,
+};
+
+static struct platform_device aml_efuse_device = {
+    .name      = "efuse",
+    .id        = -1,
+    .dev = {
+               .platform_data = &aml_efuse_plat,
+           },
+};
+#endif
+
 #ifdef CONFIG_AM_NAND
 /*static struct mtd_partition partition_info[] = 
 {
@@ -1601,6 +1616,22 @@ static struct platform_device android_usb_device = {
 };
 #endif
 
+#ifdef CONFIG_POST_PROCESS_MANAGER
+static struct resource ppmgr_resources[] = {
+    [0] = {
+        .start =  PPMGR_ADDR_START,
+        .end   = PPMGR_ADDR_END,
+        .flags = IORESOURCE_MEM,
+    },
+};
+static struct platform_device ppmgr_device = {
+    .name       = "ppmgr",
+    .id         = 0,
+    .num_resources = ARRAY_SIZE(ppmgr_resources),
+    .resource      = ppmgr_resources,
+};
+#endif
+
 #ifdef CONFIG_BT_DEVICE
 #include <linux/bt-device.h>
 
@@ -1781,15 +1812,21 @@ static struct platform_device __initdata *platform_devs[] = {
     #if  defined(CONFIG_AM_TV_OUTPUT)||defined(CONFIG_AM_TCON_OUTPUT)
        &vout_device,	
     #endif
-     #ifdef CONFIG_USB_ANDROID
-		&android_usb_device,
-      #ifdef CONFIG_USB_ANDROID_MASS_STORAGE
-		&usb_mass_storage_device,
-      #endif
-    #endif	
-    #ifdef CONFIG_BT_DEVICE  
-        &bt_device,
-    #endif    	
+#ifdef CONFIG_USB_ANDROID
+    &android_usb_device,
+#ifdef CONFIG_USB_ANDROID_MASS_STORAGE
+    &usb_mass_storage_device,
+#endif
+#endif
+#ifdef CONFIG_BT_DEVICE
+    &bt_device,
+#endif
+#ifdef CONFIG_POST_PROCESS_MANAGER
+    &ppmgr_device,
+#endif
+#ifdef CONFIG_EFUSE
+    &aml_efuse_device,
+#endif
 };
 static struct i2c_board_info __initdata aml_i2c_bus_info[] = {
 
@@ -1916,6 +1953,7 @@ static __init void m1_init_machine(void)
 	meson_cache_init();
 
 	power_hold();
+	pm_power_off = set_bat_off;
 	device_clk_setting();
 	device_pinmux_init();
 	platform_add_devices(platform_devs, ARRAY_SIZE(platform_devs));

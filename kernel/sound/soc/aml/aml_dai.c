@@ -18,8 +18,8 @@
 static int aml_dai_startup(struct snd_pcm_substream *substream,
 			     struct snd_soc_dai *dai)
 {
-		struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
-		
+//  struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
+	  	
 printk("***Entered %s:%s\n", __FILE__,__func__);
 		return 0;
 }
@@ -27,7 +27,7 @@ printk("***Entered %s:%s\n", __FILE__,__func__);
 static void aml_dai_shutdown(struct snd_pcm_substream *substream,
 			       struct snd_soc_dai *dai)
 {
-		struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
+//  struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
 printk("***Entered %s:%s\n", __FILE__,__func__);
 }
 static int aml_dai_set_dai_fmt(struct snd_soc_dai *cpu_dai,
@@ -48,17 +48,17 @@ static int aml_dai_hw_params(struct snd_pcm_substream *substream,
 	struct snd_pcm_hw_params *params,
 	struct snd_soc_dai *dai)
 {
-printk("***Entered %s:%s\n", __FILE__,__func__);
 	struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
-	int id = rtd->dai->cpu_dai->id;
-	
+//	int id = rtd->dai->cpu_dai->id;
+	printk("***Entered %s:%s\n", __FILE__,__func__);
+
 	return 0;
 }
 
 static int aml_dai_prepare(struct snd_pcm_substream *substream,
 			     struct snd_soc_dai *dai)
 {
-		struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
+//	struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
 //printk("***Entered %s:%s\n", __FILE__,__func__);
 	return 0;
 }

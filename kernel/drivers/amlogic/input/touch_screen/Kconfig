@@ -38,7 +38,27 @@ config SIS92XX_CAPACITIVE_TOUCHSCREEN
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called .
+	  
+config FOCALTECH_CAPACITIVE_TOUCHSCREEN
+	tristate "focaltech capacitive touch panel"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you want to use the focaltech 5x06 capacitive panel.
 
+	  To compile this driver as a module, choose M here: the
+	  module will be called .
+
+config SITRONIX_CAPACITIVE_TOUCHSCREEN
+	tristate "SITRONIX capacitive touch panel"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you want to use the SITRONIX st15xx capacitive panel.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called .
+	  
 config HX8520_CAPACITIVE_TOUCHSCREEN
 	tristate "HX8520 capacitive touch panel"
 	depends on I2C

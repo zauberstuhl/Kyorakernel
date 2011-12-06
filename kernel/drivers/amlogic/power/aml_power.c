@@ -87,7 +87,7 @@ static int aml_power_get_property(struct power_supply *psy,
 				      pdata->is_usb_online() : 0;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		val->intval = pdata->get_bat_vol()*(3300*2/1024);
+		val->intval = pdata->get_bat_vol()*((3300000*3/2)/1024);
 #ifdef AML_POWER_DBG
 		printk(KERN_INFO "curren voltage is :%dmV\n",val->intval);
 #endif
@@ -113,6 +113,15 @@ static int aml_power_get_property(struct power_supply *psy,
 		printk(KERN_INFO "current capacity is %d%%\n,",val->intval);
 #endif
 		break;
+	case POWER_SUPPLY_PROP_HEALTH:	
+		val->intval = POWER_SUPPLY_HEALTH_GOOD;
+		break;
+	case POWER_SUPPLY_PROP_PRESENT:	
+		val->intval = 1;
+		break;
+    case POWER_SUPPLY_PROP_TECHNOLOGY:
+        val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
+        break;						
 	default:
 		return -EINVAL;
 	}
@@ -125,6 +134,9 @@ static enum power_supply_property aml_power_props[] = {
 
 static enum power_supply_property aml_battery_props[] = {
 	POWER_SUPPLY_PROP_STATUS,
+    POWER_SUPPLY_PROP_HEALTH,
+    POWER_SUPPLY_PROP_PRESENT,    
+    POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
@@ -345,17 +357,17 @@ static void supply_timer_func(unsigned long unused)
 			if(pdata->ic_control)
 				pdata->ic_control(0);
 		}
-		usb_status = new_usb_status;
+		usb_status = new_usb_status;	
 		power_supply_changed(&aml_psy_usb);
 	}
 	
 	if (charge_status == AML_PSY_TO_CHANGE) {
-		charge_status = new_charge_status;
+		charge_status = new_charge_status;	
 		power_supply_changed(&aml_psy_bat);
 	}
 
 	if (battery_capacity == AML_PSY_TO_CHANGE) {
-		battery_capacity = new_battery_capacity;
+		battery_capacity = new_battery_capacity;		
 		power_supply_changed(&aml_psy_bat);
 	}			
 }
@@ -367,6 +379,19 @@ static void psy_changed(void)
 	 * Okay, charger set. Now wait a bit before notifying supplicants,
 	 * charge power should stabilize.
 	 */
+	 
+	//mcli
+	if(supply_timer.function==NULL)
+	    return;
+		    
+	if(pdata==NULL) 
+    {  
+        mod_timer(&supply_timer,jiffies + msecs_to_jiffies(500));
+		
+		return;
+    }
+    //mcli end
+    
 	mod_timer(&supply_timer,
 		  jiffies + msecs_to_jiffies(pdata->wait_for_charger));
 }

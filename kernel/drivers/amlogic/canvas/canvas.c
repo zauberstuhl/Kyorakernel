@@ -23,7 +23,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/fs.h>
-#include <linux/device.h>
+#include <linux/platform_device.h>
 #include <linux/spinlock.h>
 #include <linux/major.h>
 #include <linux/amports/canvas.h>
@@ -40,8 +40,7 @@
 
 #define CANVAS_NUM	192
 
-static struct class *canvas_class;
-static struct device *canvas_dev;
+static struct platform_device *canvas_dev;
 static spinlock_t lock = SPIN_LOCK_UNLOCKED;
 static canvas_t canvasPool[CANVAS_NUM];
 
@@ -92,13 +91,10 @@ void canvas_copy(u32 src, u32 dst)
 {
     unsigned long addr;
     unsigned width, height, wrap, blkmode;
-    ulong flags;
 
     if ((src >= CANVAS_NUM) || (dst >= CANVAS_NUM))
         return;
 
-    spin_lock_irqsave(&lock, flags);
-    
     addr = canvasPool[src].addr;
     width = canvasPool[src].width;
     height = canvasPool[src].height;
@@ -127,8 +123,6 @@ void canvas_copy(u32 src, u32 dst)
     canvasPool[dst].wrap = wrap;
     canvasPool[dst].blkmode = blkmode;
 
-    spin_unlock_irqrestore(&lock, flags);
-    
     return;
 }
 EXPORT_SYMBOL(canvas_copy);
@@ -233,64 +227,75 @@ static struct kobj_type canvas_attr_type = {
 	.default_attrs	= canvas_attrs,
 };
 
-static int __init amcanvas_init(void)
+static int __devinit canvas_probe(struct platform_device *pdev)
 {
-	int r, i;
-
-	canvas_class = class_create(THIS_MODULE, CLASS_NAME);
-	if ((r = IS_ERR(canvas_class)) != 0) {
-		pr_error("canvas class create failed\n");
-		r = -EIO;
-		goto err1;
-	}
-
-	canvas_dev = device_create(canvas_class, NULL,
-					  MKDEV(AMCANVAS_MAJOR, 0), NULL,
-					  DEVICE_NAME);
-
-	if (IS_ERR(canvas_dev)) {
-        pr_error("Can't create amcanvas device\n");
-		r = PTR_ERR(canvas_dev);
-        goto err2;
-	}
-
+    int i, r;
+    
 	for (i = 0; i < CANVAS_NUM; i++) {
 		r = kobject_init_and_add(&canvasPool[i].kobj, &canvas_attr_type,
-				&canvas_dev->kobj, "%d", i);
+				&pdev->dev.kobj, "%d", i);
 		if (r) {
-			pr_error("Can not add canvas object, i = %d\n", i);
-			goto err3;
+			pr_error("Unable to create canvas objects %d\n", i);
+			goto err;
 		}
 	}
 
-	return (0);
+    canvas_dev = pdev;
 
-err3:
+    return 0;
+
+err:
 	for (i--; i>=0; i--)
 		kobject_put(&canvasPool[i].kobj);
 
-    device_destroy(canvas_class, MKDEV(AMCANVAS_MAJOR, 0));
-
-err2:
-    class_destroy(canvas_class);
-
-err1:
-	pr_error("canvas drv init failed\n");
+	pr_error("Canvas driver probe failed\n");
 
 	return r;	
 }
 
+static int __devexit canvas_remove(struct platform_device *pdev)
+{
+    int i;
+
+	for (i=0; i<CANVAS_NUM; i++)
+		kobject_put(&canvasPool[i].kobj);
+
+    return 0;
+}
+
+static struct platform_driver canvas_driver = {
+    .probe  = canvas_probe,
+    .remove = canvas_remove,
+    .driver = {
+        .name = DEVICE_NAME,
+    },
+};
+
+static int __init amcanvas_init(void)
+{
+    int r;
+	
+    r = platform_driver_register(&canvas_driver);
+    if (r) {
+        pr_error("Unable to register canvas driver\n");
+        return r;
+    }
+
+    canvas_dev = platform_device_register_simple(DEVICE_NAME, -1,
+                                                NULL, 0);
+    if (IS_ERR(canvas_dev)) {
+        pr_error("Unable to register canvas device\n");
+        platform_driver_unregister(&canvas_driver);
+        return PTR_ERR(canvas_dev);
+    }
+
+    return 0;
+}
+
 static void __exit amcanvas_exit(void)
 {
-	int i;
-
-	for (i=0; i<CANVAS_NUM; i++) {
-		kobject_put(&canvasPool[i].kobj);
-	}
-
-    device_destroy(canvas_class, MKDEV(AMCANVAS_MAJOR, 0));
-
-    class_destroy(canvas_class);
+    platform_device_unregister(canvas_dev);
+    platform_driver_unregister(&canvas_driver);
 }
 
 subsys_initcall(amcanvas_init);

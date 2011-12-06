@@ -4,7 +4,10 @@
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
 #include <linux/saradc.h>
+#include <linux/delay.h>
 #include "saradc_reg.h"
+
+//#define ENABLE_CALIBRATION
 
 struct saradc {
 	spinlock_t lock;
@@ -62,6 +65,7 @@ static void saradc_reset(void)
 	set_detect_irq_pol(0);
 	disable_detect_irq();
 
+//	set_sc_phase();
 	enable_sample_engine();
 
 //	printk("ADCREG reg0 =%x\n", get_reg(SAR_ADC_REG0));
@@ -73,32 +77,26 @@ static void saradc_reset(void)
 //	printk("ADCREG detect&idle=%x\n", get_reg(SAR_ADC_DETECT_IDLE_SW));
 }
 
+#ifdef ENABLE_CALIBRATION
 static int  saradc_internal_cal(struct calibration *cal)
 {
-	return -1;
-	
 	int i;
-	int voltage[4] = {CAL_0P55V, CAL_1P10V, CAL_1P65V, CAL_2P20V};
-
-	cal->ref = 0;
-	(cal+1)->ref = 170;
-	(cal+2)->ref = 341;
-	(cal+3)->ref = 511;
-	(cal+4)->ref = 684;
-	(cal+5)->ref = 1023;
+	int voltage[] = {CAL_VOLTAGE_1, CAL_VOLTAGE_2, CAL_VOLTAGE_3, CAL_VOLTAGE_4, CAL_VOLTAGE_5};
+	int ref[] = {0, 256, 512, 768, 1023};
 	
-	set_cal_mux(MUX_CAL);
-	enable_cal_res_array();	
-	for (i=1; i<5; i++) {
+//	set_cal_mux(MUX_CAL);
+//	enable_cal_res_array();	
+	for (i=0; i<INTERNAL_CAL_NUM; i++) {
 		set_cal_voltage(voltage[i]);
-		(cal+i)->val = get_adc_sample(-1);
-		if ((cal+i)->val < 0) {
-			printk(KERN_INFO "saradc calibration fail\n");
+		msleep(100);
+		cal[i].ref = ref[i];
+		cal[i].val = get_adc_sample(CHAN_CAL);
+		printk(KERN_INFO "cal[%d]=%d\n", i, cal[i].val);
+		if (cal[i].val < 0) {
 			return -1;
 		}
 	}
 	
-	printk(KERN_INFO "saradc calibration ok\n");
 	return 0;
 }
 
@@ -110,13 +108,13 @@ static int saradc_get_cal_value(struct calibration *cal, int num, int val)
 	if (num < 2)
 		return val;
 		
-	if (val <cal[0].val)
+	if (val <= cal[0].val)
 		return cal[0].ref;
 
-	if (val > cal[num-1].val)
+	if (val >= cal[num-1].val)
 		return cal[num-1].ref;
 	
-	for (i=0; i<num; i++) {
+	for (i=0; i<num-1; i++) {
 		if (val < cal[i+1].val) {
 			ret = val - cal[i].val;
 			ret *= cal[i+1].ref - cal[i].ref;
@@ -127,13 +125,16 @@ static int saradc_get_cal_value(struct calibration *cal, int num, int val)
 	}
 	return ret;
 }
+#endif
 
-
+static int last_value[] = {-1,-1,-1,-1,-1 ,-1,-1 ,-1};
+static u8 print_flag = 0; //(1<<CHAN_4)
 int get_adc_sample(int chan)
 {
 	int count;
 	int value;
 	int sum;
+	int changed;
 	
 	if (!gp_saradc)
 		return -1;
@@ -155,7 +156,7 @@ int get_adc_sample(int chan)
 	count = 0;
 	while (delta_busy() || sample_busy() || avg_busy()) {
 		if (++count > 10000) {
-        			printk(KERN_ERR "ADC busy error.\n");
+			printk(KERN_ERR "ADC busy error=%x.\n", READ_CBUS_REG(SAR_ADC_REG0));
 			goto end;
 		}
 	}
@@ -166,16 +167,28 @@ int get_adc_sample(int chan)
     value = get_fifo_sample();
 	while (get_fifo_cnt()) {
         value = get_fifo_sample() & 0x3ff;
-        if ((value != 0x1fe) && (value != 0x1ff)) {
+        //if ((value != 0x1fe) && (value != 0x1ff)) {
 			sum += value & 0x3ff;
             count++;
-        }
+        //}
 	}
 	value = (count) ? (sum / count) : (-1);
 
 end:
-	//printk("ch%d = %d, count=%d\n", chan, value, count);
+	changed = (value == last_value[chan]) ? 0 : 1;
+	if (changed && ((print_flag>>chan)&1)) {
+		printk("before cal: ch%d = %d\n", chan, value);
+		last_value[chan] = value;
+	}
+#ifdef ENABLE_CALIBRATION
+	if (gp_saradc->cal_num) {
+		value = saradc_get_cal_value(gp_saradc->cal, gp_saradc->cal_num, value);
+		if (changed && ((print_flag>>chan)&1))
+			printk("after cal: ch%d = %d\n\n", chan, value);
+	}
+#endif
 	disable_sample_engine();
+//	set_sc_phase();
 	spin_unlock(&gp_saradc->lock);
 	return value;
 }
@@ -261,13 +274,31 @@ static ssize_t saradc_ch5_show(struct class *cla, struct class_attribute *attr, 
 {
     return sprintf(buf, "%d\n", get_adc_sample(5));
 }
+static ssize_t saradc_ch6_show(struct class *cla, struct class_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%d\n", get_adc_sample(6));
+}
+static ssize_t saradc_ch7_show(struct class *cla, struct class_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%d\n", get_adc_sample(7));
+}
+static ssize_t saradc_print_flag_store(struct class *cla, struct class_attribute *attr, char *buf, ssize_t count)
+{
+		sscanf(buf, "%x", &print_flag);
+    printk("print_flag=%d\n", print_flag);
+    return count;
+}
+
 static struct class_attribute saradc_class_attrs[] = {
     __ATTR_RO(saradc_ch0),
     __ATTR_RO(saradc_ch1),
     __ATTR_RO(saradc_ch2),
     __ATTR_RO(saradc_ch3),
     __ATTR_RO(saradc_ch4),
-    __ATTR_RO(saradc_ch5),                    
+    __ATTR_RO(saradc_ch5),
+    __ATTR_RO(saradc_ch6),
+    __ATTR_RO(saradc_ch7),    
+    __ATTR(saradc_print_flag, S_IRWXUGO, 0, saradc_print_flag_store),
     __ATTR_NULL
 };
 static struct class saradc_class = {
@@ -290,9 +321,12 @@ static int __init saradc_probe(struct platform_device *pdev)
 	saradc_reset();
 	gp_saradc = saradc;
 
+	saradc->cal = 0;
+	saradc->cal_num = 0;
+#ifdef ENABLE_CALIBRATION
 	if (pdata && pdata->cal) {
 		saradc->cal = pdata->cal;
-		saradc->cal_num = pdata->cal;
+		saradc->cal_num = pdata->cal_num;
 		printk(KERN_INFO "saradc use signed calibration data\n");
 	}
 	else {
@@ -311,7 +345,8 @@ static int __init saradc_probe(struct platform_device *pdev)
 			}
 		}
 	}
-		
+#endif
+//	set_cal_voltage(7);
 	spin_lock_init(&saradc->lock);	
 	return 0;
 

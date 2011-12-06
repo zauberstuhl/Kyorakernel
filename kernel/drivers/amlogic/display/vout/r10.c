@@ -37,7 +37,7 @@
 #include <mach/am_regs.h>
 #include <mach/pinmux.h>
 #include <mach/power_gate.h>
-
+//auo A080SN03 V3
 #define LCD_WIDTH       800
 #define LCD_HEIGHT      600
 #define MAX_WIDTH       1056

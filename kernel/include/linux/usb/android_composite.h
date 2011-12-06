@@ -79,6 +79,7 @@ struct usb_mass_storage_platform_data {
 
 	/* number of LUNS */
 	int nluns;
+	int unremovableflag;
 };
 
 /* Platform data for USB ethernet driver. */
