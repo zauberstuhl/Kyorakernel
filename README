@@ -7,10 +7,12 @@ How to use it:
 2: Run the initramfs.sh to build the cpio
 3: cd kernel
 4: make menuconfig (change any settings in here)
-5: make -j2 uImage (change 2 to however many CPU cores you have)
-6: ???
-7: PROFIT!
-
+5: Go to "System Type  --->" and choose these:
+--- ARM system type: Amlogic Meson series
+--- Meson platform type: Support M1 8726(G7) platform(machid=2956)
+6: Save and Quit
+7: make -j2 uImage (change 2 to however many CPU cores you have)
+8: Your kernel should compile fine and be in kyorakernel/kernel/arch/arm/boot/uImage
 
 If you have any suggestions to changes then fork the repo, make some changes, commit it and do a pull request so I can see what you want me to change.
 

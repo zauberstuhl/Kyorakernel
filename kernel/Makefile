@@ -4,6 +4,8 @@ SUBLEVEL = 34
 EXTRAVERSION =
 NAME = Sheep on Meth
 
+INSTALL_MOD_PATH = ..
+
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
 # More info can be located in ./README
@@ -186,8 +188,9 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/i386/ -e s/sun4u/sparc64/ \
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 export KBUILD_BUILDHOST := $(SUBARCH)
-ARCH		?= arm
-CROSS_COMPILE	?=  arm-none-linux-gnueabi-
+ARCH		:= arm
+CROSS_COMPILE	:= /root/CodeSourcery/arm-2010q1/bin/arm-none-eabi-
+
 
 # Architecture as present in compile.h
 UTS_MACHINE 	:= $(ARCH)
@@ -228,7 +231,9 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 HOSTCC       = gcc
 HOSTCXX      = g++
 HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer
-HOSTCXXFLAGS = -O2
+HOSTCXXFLAGS = -pipe -march=armv7-a -O3 -mcpu=cortex-a9 -mfloat-abi=softfp -mfpu=neon
+#HOSTCXXFLAGS = -pipe -march=armv7-a -mthumb -O3 -mcpu=cortex-a9 -mfloat-abi=softfp -mfpu=neon
+
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
@@ -312,7 +317,7 @@ include $(srctree)/scripts/Kbuild.include
 
 AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
-CC		= $(CROSS_COMPILE)gcc
+CC		= $(CROSS_COMPILE)gcc-4.4
 CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
