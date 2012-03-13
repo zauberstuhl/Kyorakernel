@@ -1,0 +1,4 @@
+setenv bootcmd 'fatload mmc 0 82000000 uImage;bootm 82000000;'
+setenv bootargs 'quiet root=/dev/ram0 init=/init rw'
+saveenv
+boot

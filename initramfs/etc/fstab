@@ -1,0 +1,3 @@
+proc		/proc		proc	defaults	0	0
+sys		/sys		sysfs	defaults	0	0
+/dev/cardblksd2	/newroot	ext3	rw		0	0

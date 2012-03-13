@@ -1,0 +1,36 @@
+#! /bin/sh
+export PATH=/sbin:/
+
+#Disable kernel messages from popping onto the screen
+echo "0 0 0 0" > /proc/sys/kernel/printk
+
+#Mount things needed by this script
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+
+#Set display mode
+set_display_mode.sh panel
+
+#Clear the screen
+clear
+
+#Make devices
+mdev -s
+sleep 5s
+
+#Mount new rootfs
+mount /dev/cardblksd2 /newroot -t ext3 -o rw
+
+#Unmount all other mounts so that the ram used by
+#the initramfs can be cleared after switch_root
+umount /proc
+umount /sys
+	
+#Switch to the new root and execute init
+exec chroot /newroot /sbin/init 5
+
+#This will only be run if the exec above failed
+echo "Failed to switch_root, dropping to a shell"
+exec sh
+
+

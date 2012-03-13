@@ -4,7 +4,7 @@
 #include <asm/page.h>
 
 #define PHYS_MEM_START		(0x80000000)
-#define PHYS_MEM_SIZE		(256*SZ_1M)
+#define PHYS_MEM_SIZE		(512*SZ_1M)
 #define PHYS_MEM_END		(PHYS_MEM_START + PHYS_MEM_SIZE -1 )
 
 /******** Reserved memory setting ************************/
